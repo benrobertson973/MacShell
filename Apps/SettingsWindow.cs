@@ -657,6 +657,11 @@ public class SettingsWindow : MacWindow
         SectionTitle("Takeover");
         Group(
             Row("Hide the Windows taskbar", Switch(s.HideWindowsTaskbar, v => { Settings.Current.HideWindowsTaskbar = v; Save(); if (v == Takeover.TaskbarTemporarilyShown) Takeover.ToggleTaskbar(); })),
+            Row("Show app icons in the menu bar", Switch(s.MenuBarTrayIcons, v =>
+            {
+                Settings.Current.MenuBarTrayIcons = v; Save();
+                if (v) TrayHost.Start(ShellHost.MenuBar.TrayIconRect); else TrayHost.Stop();
+            }), "Icons of apps running in the background (the Windows system tray)"),
             Row("Tapping the Windows key", PopUp(new[] { "Does nothing", "Opens Launchpad", "Opens the Start menu" },
                 s.WinKeyAction switch { "launchpad" => 1, "start" => 2, _ => 0 },
                 i => { Settings.Current.WinKeyAction = i switch { 1 => "launchpad", 2 => "start", _ => "nothing" }; Save(); })),

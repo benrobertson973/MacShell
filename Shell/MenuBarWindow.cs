@@ -82,6 +82,7 @@ public class MenuBarWindow : Window
         Theme.Changed += () => { ApplyAppearance(); RebuildMenus(); };
         WindowTracker.ActiveAppChanged += RebuildMenus;
         Settings.Changed += UpdateClock;
+        TrayHost.Changed += RebuildTrayIcons;
 
         var timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
         timer.Tick += (_, _) => { UpdateClock(); if (++_soundTick % 2 == 0) UpdateSoundIcon(); };
@@ -103,7 +104,7 @@ public class MenuBarWindow : Window
             {
                 if (msg == WM_MOUSEACTIVATE) { handled = true; return new IntPtr(MA_NOACTIVATE); }
                 if (Takeover.HandleAppBarMessage(h, msg, w, l)) handled = true;
-                else if ((uint)msg == Takeover.TaskbarCreatedMessage) Dispatcher.BeginInvoke(() => { Takeover.OnExplorerRestarted(); ShellHost.UpdateWorkArea(); });
+                else if ((uint)msg == Takeover.TaskbarCreatedMessage && !TrayHost.SelfBroadcast) Dispatcher.BeginInvoke(() => { Takeover.OnExplorerRestarted(); ShellHost.UpdateWorkArea(); });
                 return IntPtr.Zero;
             });
         };
@@ -138,6 +139,7 @@ public class MenuBarWindow : Window
     void BuildStatusItems()
     {
         _right.Children.Clear();
+        _right.Children.Add(_trayPanel);
 
         _battery = new BatteryIcon { Foreground = _text, VerticalAlignment = VerticalAlignment.Center };
         _batteryPct = new TextBlock { Foreground = _text, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 5, 0), FontSize = 12 };
@@ -164,6 +166,81 @@ public class MenuBarWindow : Window
         _clock.Foreground = _text;
         _clockButton = new StatusButton(_clock, b => NotificationCenterWindow.Toggle(b)) { Padding = new Thickness(8, 0, 6, 0) };
         _right.Children.Add(_clockButton);
+    }
+
+    // ------------------------------------------------------------------ app menu extras (Windows tray icons)
+
+    readonly StackPanel _trayPanel = new() { Orientation = Orientation.Horizontal };
+    readonly Dictionary<string, TrayButton> _trayButtons = new();
+
+    /// <summary>Newest icon leftmost, as macOS adds menu extras; hidden (NIS_HIDDEN) and icon-less ones skipped.</summary>
+    void RebuildTrayIcons()
+    {
+        var shown = TrayHost.Icons.Where(i => !i.Hidden && i.Image != null).OrderByDescending(i => i.Order).ToList();
+        var keep = new HashSet<string>(shown.Select(i => i.Key));
+        foreach (var k in _trayButtons.Keys.Where(k => !keep.Contains(k)).ToList()) _trayButtons.Remove(k);
+        _trayPanel.Children.Clear();
+        foreach (var icon in shown)
+        {
+            if (!_trayButtons.TryGetValue(icon.Key, out var b)) _trayButtons[icon.Key] = b = new TrayButton();
+            b.Bind(icon);
+            _trayPanel.Children.Add(b);
+        }
+    }
+
+    /// <summary>Where an icon is on screen (pixels), for Shell_NotifyIconGetRect.</summary>
+    public RECT? TrayIconRect(TrayIcon icon)
+    {
+        if (!_trayButtons.TryGetValue(icon.Key, out var b) || !b.IsVisible) return null;
+        var tl = b.PointToScreen(new Point(0, 0));
+        var br = b.PointToScreen(new Point(b.ActualWidth, b.ActualHeight));
+        return new RECT((int)tl.X, (int)tl.Y, (int)br.X, (int)br.Y);
+    }
+
+    /// <summary>A tray icon in the menu bar: left click / double click / right click go to the app like Explorer's tray.</summary>
+    class TrayButton : Border
+    {
+        readonly Image _img = new() { Width = 16, Height = 16, VerticalAlignment = VerticalAlignment.Center, SnapsToDevicePixels = true };
+        TrayIcon _icon;
+
+        public TrayButton()
+        {
+            Child = _img;
+            RenderOptions.SetBitmapScalingMode(_img, BitmapScalingMode.HighQuality);
+            Padding = new Thickness(6, 0, 6, 0);
+            Margin = new Thickness(0, 1, 0, 1);
+            CornerRadius = new CornerRadius(4);
+            Background = Brushes.Transparent;
+            VerticalAlignment = VerticalAlignment.Stretch;
+            ToolTipService.SetInitialShowDelay(this, 600);
+            MouseLeftButtonDown += (_, e) =>
+            {
+                e.Handled = true;
+                Press(true);
+                if (e.ClickCount == 2) Send(false, true);
+            };
+            MouseLeftButtonUp += (_, e) => { e.Handled = true; Press(false); if (e.ClickCount < 2) Send(false, false); };
+            MouseRightButtonDown += (_, e) => { e.Handled = true; Press(true); };
+            MouseRightButtonUp += (_, e) => { e.Handled = true; Press(false); Send(true, false); };
+            MouseLeave += (_, _) => Press(false);
+        }
+
+        public void Bind(TrayIcon icon)
+        {
+            _icon = icon;
+            _img.Source = icon.Image;
+            ToolTip = string.IsNullOrWhiteSpace(icon.Tip) ? null : icon.Tip;
+        }
+
+        void Press(bool down) => Background = down ? (Brush)FindResource("MenuBarHighlightBrush") : Brushes.Transparent;
+
+        void Send(bool right, bool dbl)
+        {
+            if (_icon == null) return;
+            var p = PointToScreen(new Point(ActualWidth / 2, ActualHeight));
+            MenuDismisser.CloseAll();
+            TrayHost.Click(_icon, right, dbl, p);
+        }
     }
 
     static void OpenUri(string uri)

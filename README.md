@@ -47,7 +47,8 @@ Ctrl+Shift+N makes a new folder, Ctrl+Shift+G is Go to Folder, Ctrl+Shift+. show
   Lock Screen, Log Out), the bold active-app name, per-app menus, and status items (battery, Wi-Fi, Spotlight,
   Control Center, clock). Classic Win32 apps that have a real menu bar (Notepad++, 7-Zip, regedit …) get
   it mirrored into the global menu bar. The Window menu adds Fill, Center and Move & Resize (halves and quarters)
-  for any app.
+  for any app. Apps running in the background show their system-tray icons as menu extras left of the status
+  items (click = the app's tray action, right-click = its menu); everything is still forwarded to Explorer's tray.
 * **Dock**: fisheye magnification, running indicators, red notification badges (from apps' own badge counts and
   "(3) App" style window titles), launch bounce, name labels, right-click menus (window list, Keep in Dock,
   Show in Finder, Hide, Quit; hold Alt for Force Quit), drag to reorder, hold an icon above the Dock until

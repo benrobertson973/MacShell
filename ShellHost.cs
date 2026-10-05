@@ -60,6 +60,7 @@ public static class ShellHost
 
         MenuBar = new MenuBarWindow();
         MenuBar.Show();
+        if (Settings.Current.MenuBarTrayIcons) TrayHost.Start(MenuBar.TrayIconRect);
         Dock = new DockWindow();
         Dock.Show();
         UpdateWorkArea();
@@ -87,6 +88,7 @@ public static class ShellHost
         _maintain.Tick += (_, _) =>
         {
             if (TakeoverEnabled) Takeover.Maintain();
+            TrayHost.Maintain();
             CheckFullscreen();
         };
         _maintain.Start();
@@ -130,6 +132,11 @@ public static class ShellHost
         MenuBar?.Reposition();
         Dock?.Reposition();
         UpdateWorkArea();
+    }
+
+    static string ExeName(int pid)
+    {
+        try { return Process.GetProcessById(pid).ProcessName; } catch { return "?"; }
     }
 
     public static void UpdateWorkArea()
@@ -196,6 +203,19 @@ public static class ShellHost
             case "menu": if (int.TryParse(arg, out int m)) MenuBar?.OpenMenu(m); break;
             case "menuclose": MenuBar?.OpenMenu(-1); break;
             case "offscreen": Offscreen = arg == "on"; break;
+            case "tray": if (arg == "on") TrayHost.Start(MenuBar.TrayIconRect); else TrayHost.Stop(); break;
+            case "trayclick":   // diagnostics: trayclick:<pid>[:right]
+                {
+                    var parts = (arg ?? "").Split(':');
+                    var icon = TrayHost.Icons.FirstOrDefault(i => i.ProcessId.ToString() == parts[0]);
+                    if (icon != null) TrayHost.Click(icon, parts.Length > 1 && parts[1] == "right", false, new Point(0, 0));
+                    break;
+                }
+            case "dumptray":
+                File.WriteAllText(Path.Combine(Settings.DataDirectory, "tray.txt"), string.Join(Environment.NewLine,
+                    TrayHost.Icons.Select(i => $"pid={i.ProcessId} exe={ExeName(i.ProcessId)} v={i.Version} hidden={i.Hidden} img={i.Image?.PixelWidth} cb=0x{i.CallbackMessage:X}"))
+                    + Environment.NewLine + $"running={TrayHost.Running} first={FindWindow("Shell_TrayWnd", null) == TrayHost.Hwnd}");
+                break;
             case "theme": Settings.Current.Appearance = arg; Settings.Save(); Theme.Apply(); break;
             case "snap": Snapshot(arg); break;
             case "dumpdock":
@@ -425,6 +445,7 @@ public static class ShellHost
         try { WindowGuard.Release(); } catch { }
         try { _hook?.Dispose(); } catch { }
         try { WindowTracker.Stop(); } catch { }
+        try { TrayHost.Stop(); } catch { }
         try { Takeover.Release(); } catch { }
         Application.Current.Shutdown();
     }

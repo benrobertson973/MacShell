@@ -48,6 +48,8 @@ public class AppSettings
     public List<string> RecentApps { get; set; } = new();
     public List<string> RecentDocs { get; set; } = new();
     public bool HideWindowsTaskbar { get; set; } = true;
+    /// <summary>Show running apps' notification-area (tray) icons in the menu bar, like macOS menu extras.</summary>
+    public bool MenuBarTrayIcons { get; set; } = true;
     public bool LaunchpadOnWinKey { get; set; } = true;          // legacy (superseded by WinKeyAction)
     /// <summary>What tapping the Windows key alone does: "nothing" (default), "launchpad" or "start".</summary>
     public string WinKeyAction { get; set; } = "nothing";

@@ -28,6 +28,7 @@ public static class Takeover
     /// <summary>Explorer restarted: its app-bar table and taskbar windows are new, so register/hide again.</summary>
     public static void OnExplorerRestarted()
     {
+        TrayHost.OnExplorerRestarted();
         if (!Engaged) return;
         foreach (var b in _bars.Values) { b.Registered = false; b.Thickness = -1; }
         _trays.Clear();
@@ -41,13 +42,14 @@ public static class Takeover
 
     static string StateFile => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "MacShell", "taskbar-state.txt");
 
-    static IntPtr Tray => FindWindow("Shell_TrayWnd", null);
+    static IntPtr Tray => TrayHost.ExplorerTray;
     static bool ExplorerRunning => Tray != IntPtr.Zero;
 
     static IEnumerable<IntPtr> TopLevel(string cls)
     {
         IntPtr h = IntPtr.Zero;
-        while ((h = FindWindowEx(IntPtr.Zero, h, cls, null)) != IntPtr.Zero) yield return h;
+        while ((h = FindWindowEx(IntPtr.Zero, h, cls, null)) != IntPtr.Zero)
+            if (!TrayHost.IsOurs(h)) yield return h;   // MacShell's own hidden Shell_TrayWnd (menu-bar tray icons)
     }
 
     static IEnumerable<IntPtr> TrayWindows() => TopLevel("Shell_TrayWnd").Concat(TopLevel("Shell_SecondaryTrayWnd"));
@@ -138,19 +140,29 @@ public static class Takeover
 
     // ------------------------------------------------------------------ taskbar auto-hide
 
+    /// <summary>SHAppBarMessage, delivered straight to Explorer even while the menu-bar tray host is in front of it.</summary>
+    static UIntPtr AppBarMsg(uint msg, ref APPBARDATA data)
+    {
+        var copy = data;
+        UIntPtr r = UIntPtr.Zero;
+        TrayHost.StepAside(() => r = SHAppBarMessage(msg, ref copy));
+        data = copy;
+        return r;
+    }
+
     static APPBARDATA NewData(IntPtr hwnd) => new() { cbSize = Marshal.SizeOf<APPBARDATA>(), hWnd = hwnd };
 
     static int GetTaskbarState()
     {
         var abd = NewData(Tray);
-        return (int)SHAppBarMessage(ABM_GETSTATE, ref abd).ToUInt32();
+        return (int)AppBarMsg(ABM_GETSTATE, ref abd).ToUInt32();
     }
 
     static void SetTaskbarState(int state)
     {
         var abd = NewData(Tray);
         abd.lParam = new IntPtr(state);
-        SHAppBarMessage(ABM_SETSTATE, ref abd);
+        AppBarMsg(ABM_SETSTATE, ref abd);
     }
 
     static void SetTaskbarAutoHide(bool on)
@@ -216,7 +228,7 @@ public static class Takeover
         {
             var abd = NewData(hwnd);
             abd.uCallbackMessage = AppBarCallbackMessage;
-            SHAppBarMessage(ABM_NEW, ref abd);   // returns FALSE if already registered, which is fine
+            AppBarMsg(ABM_NEW, ref abd);   // returns FALSE if already registered, which is fine
             bar.Registered = true;
         }
         bar.Thickness = px;
@@ -230,11 +242,11 @@ public static class Takeover
         abd.uEdge = bar.Edge;
         abd.rc = mon;
         if (bar.Edge == ABE_TOP) abd.rc.Bottom = mon.Top + bar.Thickness; else abd.rc.Top = mon.Bottom - bar.Thickness;
-        SHAppBarMessage(ABM_QUERYPOS, ref abd);
+        AppBarMsg(ABM_QUERYPOS, ref abd);
         if (bar.Edge == ABE_TOP) abd.rc.Bottom = abd.rc.Top + bar.Thickness; else abd.rc.Top = abd.rc.Bottom - bar.Thickness;
         // ABN_POSCHANGED is broadcast to every app bar after any SETPOS; skip no-op updates to avoid ping-pong.
         if (!force && abd.rc.Left == bar.Last.Left && abd.rc.Top == bar.Last.Top && abd.rc.Right == bar.Last.Right && abd.rc.Bottom == bar.Last.Bottom) return;
-        SHAppBarMessage(ABM_SETPOS, ref abd);
+        AppBarMsg(ABM_SETPOS, ref abd);
         bar.Last = abd.rc;
     }
 
@@ -242,7 +254,7 @@ public static class Takeover
     {
         if (!_bars.TryGetValue(hwnd, out var bar) || !bar.Registered) { _bars.Remove(hwnd); return; }
         var abd = NewData(hwnd);
-        SHAppBarMessage(ABM_REMOVE, ref abd);
+        AppBarMsg(ABM_REMOVE, ref abd);
         _bars.Remove(hwnd);
     }
 
