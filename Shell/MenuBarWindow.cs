@@ -25,7 +25,6 @@ public class MenuBarWindow : Window
     readonly StackPanel _right = new() { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 0, 8, 0) };
     readonly TextBlock _clock = new() { VerticalAlignment = VerticalAlignment.Center };
     readonly SolidColorBrush _text = new(Colors.Black);
-    readonly SolidColorBrush _highlight = new(Color.FromArgb(0x26, 0, 0, 0));
     StatusButton _ccButton, _clockButton, _wifiButton, _batteryButton;
     BatteryIcon _battery;
     TextBlock _batteryPct;
@@ -48,7 +47,7 @@ public class MenuBarWindow : Window
         TextOptions.SetTextFormattingMode(this, TextFormattingMode.Ideal);
         TextOptions.SetTextRenderingMode(this, TextRenderingMode.Grayscale);
         Title = "Menu Bar";
-        Resources["MenuBarHighlightBrush"] = _highlight;
+        Resources["MenuBarHighlightBrush"] = new SolidColorBrush(Color.FromArgb(0x26, 0, 0, 0));
         Foreground = _text;
 
         var root = new Grid();
@@ -131,7 +130,8 @@ public class MenuBarWindow : Window
             _bg.Background = Wallpaper.BlurBrush(new Rect(0, 0, ShellHost.ScreenDip.Width, ShellHost.MenuBarHeight), ShellHost.ScreenDip);
         _tint.Background = new SolidColorBrush(_dark ? Color.FromArgb(0x3A, 0x10, 0x10, 0x12) : Color.FromArgb(0x55, 0xFF, 0xFF, 0xFF));
         _text.Color = _dark ? Color.FromArgb(0xF2, 0xFF, 0xFF, 0xFF) : Color.FromArgb(0xE6, 0, 0, 0);
-        _highlight.Color = _dark ? Color.FromArgb(0x38, 0xFF, 0xFF, 0xFF) : Color.FromArgb(0x24, 0, 0, 0);
+        // Replaced, not edited: menu templates use it through DynamicResource, which freezes it.
+        Resources["MenuBarHighlightBrush"] = new SolidColorBrush(_dark ? Color.FromArgb(0x38, 0xFF, 0xFF, 0xFF) : Color.FromArgb(0x24, 0, 0, 0));
     }
 
     // ------------------------------------------------------------------ status items

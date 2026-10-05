@@ -203,6 +203,7 @@ public static class ShellHost
             case "menu": if (int.TryParse(arg, out int m)) MenuBar?.OpenMenu(m); break;
             case "menuclose": MenuBar?.OpenMenu(-1); break;
             case "offscreen": Offscreen = arg == "on"; break;
+            case "delay": { var t = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3) }; t.Tick += (_, _) => { t.Stop(); RunCommand(arg); }; t.Start(); break; }
             case "tray": if (arg == "on") TrayHost.Start(MenuBar.TrayIconRect); else TrayHost.Stop(); break;
             case "trayclick":   // diagnostics: trayclick:<pid>[:right]
                 {
