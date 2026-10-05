@@ -12,7 +12,7 @@
     <RootNamespace>MacShell</RootNamespace>
     <Product>MacShell</Product>
     <!-- = the latest release tag; bump it with every release so local builds are never older than GitHub -->
-    <Version>1.1.0</Version>
+    <Version>1.1.1</Version>
     <NoWarn>CA1416;CS8632;CS0649;CS0169;CS0414</NoWarn>
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
   </PropertyGroup>
