@@ -7,8 +7,8 @@ using System.Windows.Threading;
 namespace MacShell.Services;
 
 /// <summary>
-/// Software Update from GitHub releases (github.com/benrobertson973/MacShell): checks a few minutes after start
-/// and then every few hours, downloads a newer MacShell.exe next to the running one, swaps it in (a running exe
+/// Software Update from GitHub releases (github.com/benrobertson973/MacShell): checks a minute after start
+/// and then every 5 minutes, downloads a newer MacShell.exe next to the running one, swaps it in (a running exe
 /// can be renamed, not overwritten) and offers to restart.
 /// </summary>
 public static class Updater
@@ -27,21 +27,35 @@ public static class Updater
 
     static DispatcherTimer _timer;
     static bool _busy, _asked;
-    static readonly HttpClient Http = MakeClient();
+    static readonly HttpClient Http = MakeClient(redirects: true);
 
-    static HttpClient MakeClient()
+    static HttpClient MakeClient(bool redirects)
     {
-        var c = new HttpClient { Timeout = TimeSpan.FromMinutes(5) };
+        var c = new HttpClient(new HttpClientHandler { AllowAutoRedirect = redirects }) { Timeout = TimeSpan.FromMinutes(5) };
         c.DefaultRequestHeaders.UserAgent.ParseAdd("MacShell-Updater");
         return c;
     }
 
+    /// <summary>For reading where /releases/latest points (the redirect itself, not the page).</summary>
+    static readonly HttpClient NoRedirect = MakeClient(redirects: false);
+
+    /// <summary>The release's notes (one API call, only when there is an update); empty if unavailable.</summary>
+    static async Task<string> ReleaseNotes(string tag)
+    {
+        if (Environment.GetEnvironmentVariable("MACSHELL_UPDATE_BASE") != null) return "Test update.";
+        try
+        {
+            using var doc = JsonDocument.Parse(await Http.GetStringAsync($"https://api.github.com/repos/{Owner}/{Repo}/releases/tags/{Uri.EscapeDataString(tag)}"));
+            return doc.RootElement.TryGetProperty("body", out var b) ? b.GetString() ?? "" : "";
+        }
+        catch { return ""; }
+    }
     public static void Start()
     {
         CleanUpOld();
 
-        _timer = new DispatcherTimer { Interval = TimeSpan.FromMinutes(3) };
-        _timer.Tick += (_, _) => { _timer.Interval = TimeSpan.FromHours(4); _ = CheckAsync(userInitiated: false); };
+        _timer = new DispatcherTimer { Interval = TimeSpan.FromMinutes(1) };
+        _timer.Tick += (_, _) => { _timer.Interval = TimeSpan.FromMinutes(5); _ = CheckAsync(userInitiated: false); };   // a minute after start, then every 5 minutes
         _timer.Start();
     }
 
@@ -61,38 +75,36 @@ public static class Updater
         try
         {
             SetStatus("Checking for updates…");
-            // MACSHELL_UPDATE_API: test override (a local server standing in for GitHub)
-            string api = Environment.GetEnvironmentVariable("MACSHELL_UPDATE_API") ?? $"https://api.github.com/repos/{Owner}/{Repo}/releases/latest";
-            using var doc = JsonDocument.Parse(await Http.GetStringAsync(api));
-            var root = doc.RootElement;
-            string tag = root.GetProperty("tag_name").GetString() ?? "";
+            // github.com/…/releases/latest redirects to …/releases/tag/vX.Y.Z: no API rate limit, so checking every
+            // few minutes is fine. (MACSHELL_UPDATE_BASE: test override, a local server standing in for GitHub.)
+            string baseUrl = Environment.GetEnvironmentVariable("MACSHELL_UPDATE_BASE") ?? $"https://github.com/{Owner}/{Repo}";
+            string tag;
+            using (var resp = await NoRedirect.GetAsync(baseUrl + "/releases/latest", HttpCompletionOption.ResponseHeadersRead))
+            {
+                string loc = resp.Headers.Location?.ToString() ?? "";
+                int i = loc.LastIndexOf("/tag/", StringComparison.Ordinal);
+                if (i < 0) throw new HttpRequestException("GitHub didn’t say which release is the latest.");
+                tag = Uri.UnescapeDataString(loc[(i + 5)..]);
+            }
             if (!Version.TryParse(tag.TrimStart('v', 'V'), out var latest) || Normalize(latest) <= Normalize(CurrentVersion))
             {
                 SetStatus($"MacShell {VersionText} is up to date.");
                 if (userInitiated) ShellHost.ShowAlert("MacShell is up to date", $"Version {VersionText} is the newest version.");
                 return;
             }
-            string url = null; long size = 0;
-            foreach (var a in root.GetProperty("assets").EnumerateArray())
-                if (string.Equals(a.GetProperty("name").GetString(), "MacShell.exe", StringComparison.OrdinalIgnoreCase))
-                {
-                    url = a.GetProperty("browser_download_url").GetString();
-                    size = a.GetProperty("size").GetInt64();
-                }
-            if (url == null) { SetStatus("The newest release has no MacShell.exe."); return; }
-            string notes = root.TryGetProperty("body", out var b) ? b.GetString() ?? "" : "";
+            string url = $"{baseUrl}/releases/download/{tag}/MacShell.exe";
 
             SetStatus($"Downloading MacShell {tag.TrimStart('v')}…");
             string exe = Environment.ProcessPath;
             string tmp = exe + ".new";
+            long size;
             try
             {
-                using (var resp = await Http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead))
-                {
-                    resp.EnsureSuccessStatusCode();
-                    await using var fs = File.Create(tmp);
-                    await resp.Content.CopyToAsync(fs);
-                }
+                using var resp = await Http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead);
+                resp.EnsureSuccessStatusCode();
+                size = resp.Content.Headers.ContentLength ?? -1;
+                await using var fs = File.Create(tmp);
+                await resp.Content.CopyToAsync(fs);
             }
             catch (UnauthorizedAccessException)
             {
@@ -101,7 +113,8 @@ public static class Updater
                 return;
             }
             var fi = new FileInfo(tmp);
-            if (fi.Length != size || !StartsWithMZ(tmp)) { File.Delete(tmp); SetStatus("The download was incomplete; MacShell will try again later."); return; }
+            if ((size >= 0 && fi.Length != size) || fi.Length < 100_000 || !StartsWithMZ(tmp)) { File.Delete(tmp); SetStatus("The download was incomplete; MacShell will try again later."); return; }
+            string notes = await ReleaseNotes(tag);
 
             // swap: the running exe can be renamed but not overwritten
             File.Move(exe, exe + ".old", true);
