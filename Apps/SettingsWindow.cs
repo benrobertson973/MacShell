@@ -561,7 +561,7 @@ public class SettingsWindow : MacWindow
             Row("Startup disk", Txt(MachineInfo.StartupDisk, 13, brush: "SecondaryLabelBrush")),
             Row("macOS", Txt($"{MachineInfo.OsName} {MachineInfo.OsVersion}", 12, brush: "SecondaryLabelBrush")));
         SectionTitle("Login Items");
-        Group(Row("Open MacShell at login", Switch(IsLoginItem(), SetLoginItem), "MacShell takes over the desktop every time you sign in"));
+        Group(Row("Open MacShell at login", Switch(LoginItem.Enabled, v => Task.Run(() => LoginItem.Set(v))), "MacShell takes over the desktop every time you sign in"));
         Group(
             Row("Software Update", MakeLink("Windows Update…", "ms-settings:windowsupdate")),
             Row("Storage", MakeLink("Manage…", "ms-settings:storagesense")),
@@ -574,24 +574,6 @@ public class SettingsWindow : MacWindow
         var b = new Button { Content = text, Style = (Style)Application.Current.Resources["MacButton"], MinWidth = 0 };
         b.Click += (_, _) => { try { Process.Start(new ProcessStartInfo(uri) { UseShellExecute = true }); } catch { } };
         return b;
-    }
-
-    const string RunKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
-
-    static bool IsLoginItem()
-    {
-        try { using var k = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(RunKey); return k?.GetValue("MacShell") != null; } catch { return false; }
-    }
-
-    static void SetLoginItem(bool on)
-    {
-        try
-        {
-            using var k = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(RunKey, true);
-            if (on) k?.SetValue("MacShell", $"\"{Environment.ProcessPath}\"");
-            else k?.DeleteValue("MacShell", false);
-        }
-        catch { }
     }
 
     void BuildKeyboard()
@@ -662,11 +644,16 @@ public class SettingsWindow : MacWindow
                 Settings.Current.MenuBarTrayIcons = v; Save();
                 if (v) TrayHost.Start(ShellHost.MenuBar.TrayIconRect); else TrayHost.Stop();
             }), "Icons of apps running in the background (the Windows system tray)"),
+            Row("Use this wallpaper for Windows too", Switch(s.SyncWindowsWallpaper, v =>
+            {
+                Settings.Current.SyncWindowsWallpaper = v; Save();
+                if (v) Wallpaper.Load();
+            }), "Windows shows its wallpaper for a moment while you sign in"),
             Row("Tapping the Windows key", PopUp(new[] { "Does nothing", "Opens Launchpad", "Opens the Start menu" },
                 s.WinKeyAction switch { "launchpad" => 1, "start" => 2, _ => 0 },
                 i => { Settings.Current.WinKeyAction = i switch { 1 => "launchpad", 2 => "start", _ => "nothing" }; Save(); })),
             Row("Replace Alt + Tab with the App Switcher", Switch(s.ReplaceAltTab, v => { Settings.Current.ReplaceAltTab = v; Save(); })),
-            Row("Open MacShell at login", Switch(IsLoginItem(), SetLoginItem)));
+            Row("Open MacShell at login", Switch(LoginItem.Enabled, v => Task.Run(() => LoginItem.Set(v)))));
         SectionTitle("Windows");
         var toggleTb = new Button { Content = Takeover.TaskbarTemporarilyShown ? "Hide Taskbar" : "Show Taskbar", Style = (Style)Application.Current.Resources["MacButton"] };
         toggleTb.Click += (_, _) => { Takeover.ToggleTaskbar(); toggleTb.Content = Takeover.TaskbarTemporarilyShown ? "Hide Taskbar" : "Show Taskbar"; };

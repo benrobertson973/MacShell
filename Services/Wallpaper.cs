@@ -65,11 +65,31 @@ public static class Wallpaper
             }
         }
         catch { }
-        img ??= GetGenerated("gen:sonoma", w, h);
+        if (img == null) { id = "gen:sonoma"; img = GetGenerated(id, w, h); }
         Image = img;
         Blurred = MakeBlurred(img);
         AnalyzeLuminance();
         Changed?.Invoke();
+        if (ShellHost.TakeoverEnabled && Settings.Current.SyncWindowsWallpaper) SyncToWindows(id, w, h);
+    }
+
+    /// <summary>
+    /// Gives Windows the same wallpaper, so the moment between signing in and MacShell appearing shows the
+    /// Mac wallpaper rather than a different Windows one. Only touches Windows when the picture differs.
+    /// </summary>
+    static void SyncToWindows(string id, int w, int h)
+    {
+        string file = id.StartsWith("gen:") ? Path.Combine(CacheDir, $"{id[4..]}_{w}x{h}_v3.png") : id == "windows" ? null : id;
+        if (file == null || !File.Exists(file)) return;
+        Task.Run(() =>
+        {
+            try
+            {
+                if (string.Equals(CurrentWindowsWallpaper(), file, StringComparison.OrdinalIgnoreCase)) return;
+                NativeMethods.SystemParametersInfo(NativeMethods.SPI_SETDESKWALLPAPER, 0, file, NativeMethods.SPIF_UPDATEINIFILE | NativeMethods.SPIF_SENDCHANGE);
+            }
+            catch { }
+        });
     }
 
     static BitmapSource LoadImageFile(string path, int w, int h)

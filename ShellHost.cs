@@ -36,6 +36,7 @@ public static class ShellHost
     {
         TakeoverEnabled = !noTakeover;
         Settings.Load();
+        LoginItem.Initialize();
         Theme.Apply();
         ComputeMetrics();
         Wallpaper.Load();

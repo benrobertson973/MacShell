@@ -63,6 +63,7 @@ public static class Takeover
         _hideTaskbar = hideTaskbar;
         if (hideTaskbar && ExplorerRunning) SetTaskbarAutoHide(true);
         HideShellWindows();
+        if (ExplorerRunning) HideExplorerIcons();
     }
 
     static void HideShellWindows()
@@ -113,6 +114,7 @@ public static class Takeover
         foreach (var h in TrayWindows()) if (!IsWindowVisible(h)) ShowWindow(h, SW_SHOWNA);
         foreach (var h in TopLevel("Progman")) if (!IsWindowVisible(h)) ShowWindow(h, SW_SHOWNA);
         SetTaskbarAutoHide(false);
+        RestoreExplorerIcons();
         if (_fallbackUsed)
         {
             var r = _fallbackSavedWorkArea;
@@ -120,8 +122,66 @@ public static class Takeover
         }
     }
 
+    /// <summary>
+    /// Windows is signing out / restarting and MacShell starts again at the next login: keep the taskbar
+    /// auto-hidden and Explorer's desktop icons off (their saved originals stay on disk), so the next boot goes
+    /// from the sign-in screen straight to a bare wallpaper instead of flashing the Windows desktop.
+    /// </summary>
+    public static void LeaveForNextLogin() => Engaged = false;
+
+    // ------------------------------------------------------------------ Explorer's own desktop icons
+
+    static string IconsStateFile => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "MacShell", "desktop-icons-state.txt");
+    const string AdvancedKey = @"Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced";
+
+    static bool ExplorerIconsHidden()
+    {
+        try { using var k = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(AdvancedKey); return k?.GetValue("HideIcons") is int v && v != 0; }
+        catch { return false; }
+    }
+
+    /// <summary>Explorer's "View › Show desktop icons" toggle: applies now and is remembered for the next login.</summary>
+    static void ToggleExplorerIcons()
+    {
+        foreach (var h in DesktopWindows())
+        {
+            var view = FindWindowEx(h, IntPtr.Zero, "SHELLDLL_DefView", null);
+            if (view == IntPtr.Zero) continue;
+            SendMessageTimeout(view, WM_COMMAND, new IntPtr(0x7402), IntPtr.Zero, 2, 2000, out _);
+            return;
+        }
+    }
+
+    static void HideExplorerIcons()
+    {
+        try
+        {
+            if (ExplorerIconsHidden()) return;
+            if (!File.Exists(IconsStateFile)) { Directory.CreateDirectory(Path.GetDirectoryName(IconsStateFile)!); File.WriteAllText(IconsStateFile, "shown"); }
+            ToggleExplorerIcons();
+        }
+        catch { }
+    }
+
+    static void RestoreExplorerIcons()
+    {
+        try
+        {
+            if (!File.Exists(IconsStateFile)) return;
+            if (ExplorerIconsHidden()) ToggleExplorerIcons();
+            File.Delete(IconsStateFile);
+        }
+        catch { }
+    }
+
     /// <summary>"MacShell --restore": undo everything after a crash.</summary>
     public static void EmergencyRestore()
+    {
+        RestoreExplorerIcons();
+        EmergencyRestoreWindows();
+    }
+
+    static void EmergencyRestoreWindows()
     {
         foreach (var h in TrayWindows()) ShowWindow(h, SW_SHOWNA);
         foreach (var h in TopLevel("Progman")) ShowWindow(h, SW_SHOWNA);

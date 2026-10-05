@@ -284,7 +284,7 @@ public static class NativeMethods
         SWP_FRAMECHANGED = 0x20, SWP_NOOWNERZORDER = 0x200, SWP_ASYNCWINDOWPOS = 0x4000;
     public const uint GW_OWNER = 4, GW_HWNDPREV = 3, GW_HWNDNEXT = 2, GW_CHILD = 5;
     public const uint GA_ROOT = 2, GA_ROOTOWNER = 3;
-    public const int SPI_GETWORKAREA = 0x30, SPI_SETWORKAREA = 0x2F, SPI_GETDESKWALLPAPER = 0x73;
+    public const int SPI_GETWORKAREA = 0x30, SPI_SETWORKAREA = 0x2F, SPI_GETDESKWALLPAPER = 0x73, SPI_SETDESKWALLPAPER = 0x14;
     public const int SPIF_SENDCHANGE = 0x2, SPIF_UPDATEINIFILE = 0x1;
     public const uint EVENT_SYSTEM_FOREGROUND = 0x0003, EVENT_SYSTEM_MINIMIZESTART = 0x0016, EVENT_SYSTEM_MINIMIZEEND = 0x0017,
         EVENT_OBJECT_CREATE = 0x8000, EVENT_OBJECT_DESTROY = 0x8001, EVENT_OBJECT_SHOW = 0x8002, EVENT_OBJECT_HIDE = 0x8003,
@@ -348,6 +348,7 @@ public static class NativeMethods
     [DllImport("user32.dll")] public static extern bool EnumDisplayMonitors(IntPtr hdc, IntPtr clip, MonitorEnumProc cb, IntPtr data);
     [DllImport("user32.dll", SetLastError = true)] public static extern bool SystemParametersInfo(int action, int param, ref RECT rect, int winIni);
     [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)] public static extern bool SystemParametersInfo(int action, int param, StringBuilder sb, int winIni);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)] public static extern bool SystemParametersInfo(int action, int param, string s, int winIni);
     [DllImport("user32.dll")] public static extern IntPtr SetWinEventHook(uint min, uint max, IntPtr hmod, WinEventDelegate proc, uint pid, uint tid, uint flags);
     [DllImport("user32.dll")] public static extern bool UnhookWinEvent(IntPtr hook);
     [DllImport("user32.dll", SetLastError = true)] public static extern IntPtr SetWindowsHookEx(int id, LowLevelKeyboardProc proc, IntPtr hmod, uint tid);

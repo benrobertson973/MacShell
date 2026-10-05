@@ -50,6 +50,8 @@ public class AppSettings
     public bool HideWindowsTaskbar { get; set; } = true;
     /// <summary>Show running apps' notification-area (tray) icons in the menu bar, like macOS menu extras.</summary>
     public bool MenuBarTrayIcons { get; set; } = true;
+    /// <summary>Also set the Windows wallpaper to MacShell's (seamless boot). Off by default: it replaces the user's Windows wallpaper.</summary>
+    public bool SyncWindowsWallpaper { get; set; } = false;
     public bool LaunchpadOnWinKey { get; set; } = true;          // legacy (superseded by WinKeyAction)
     /// <summary>What tapping the Windows key alone does: "nothing" (default), "launchpad" or "start".</summary>
     public string WinKeyAction { get; set; } = "nothing";

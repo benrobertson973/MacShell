@@ -53,7 +53,10 @@ public partial class App : Application
             try { Takeover.Release(); } catch { }
         };
         AppDomain.CurrentDomain.ProcessExit += (_, _) => { try { NativeMethods.ClipCursorNone(IntPtr.Zero); Takeover.Release(); } catch { } };
-        SessionEnding += (_, _) => { try { Takeover.Release(); } catch { } };
+        SessionEnding += (_, _) =>
+        {
+            try { if (LoginItem.Enabled) Takeover.LeaveForNextLogin(); else Takeover.Release(); } catch { }
+        };
 
         _quitEvent = new EventWaitHandle(false, EventResetMode.AutoReset, "MacShell.Quit");
         _openEvent = new EventWaitHandle(false, EventResetMode.AutoReset, "MacShell.OpenFinder");
