@@ -876,6 +876,9 @@ public class DockWindow : Window
                 case "trash": FileOps.MoveToTrash(files); break;
                 case "downloads": FileOps.CopyOrMove(files, GetKnownFolder(FOLDERID_Downloads), move: true); break;
                 case "finder": foreach (var f in files) ShellHost.RevealInFinder(f); break;
+                case "app" when hit.Target == Apps.Preview.PreviewWindow.AppId:
+                    foreach (var f in files.Where(Apps.Preview.PvFile.IsImage)) Apps.Preview.PreviewWindow.Open(f);
+                    break;
                 case "app":
                     AppCatalog.OpenFilesWith(new AppEntryOrTarget(hit.Target, hit.ExePath ?? AppCatalog.FindByParsingName(hit.Target)?.TargetPath ?? hit.Running?.ExePath), files);
                     break;

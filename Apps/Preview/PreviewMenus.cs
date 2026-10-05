@@ -117,6 +117,11 @@ public partial class PreviewWindow
             case "fit": SetZoom(0); break;
             case "crop": _sel = new Sel { Kind = SelKind.Oval, R = new Int32Rect(100, 100, 400, 300) }; _selGen++; Crop(); break;
             case "savecopy": SaveCopyToDesktopTest(); break;
+            case "close": Close(); break;
+            case "droptest":
+                // (drops the test picture itself onto the middle of the picture area)
+                DropPictures(new DataObject(DataFormats.FileDrop, new[] { _path }), new Point(_canvas.ActualWidth * 0.3, _canvas.ActualHeight * 0.6));
+                break;
             case "dump":
                 File.WriteAllText(Path.Combine(Settings.DataDirectory, "preview.txt"),
                     $"loaded={_loaded} markup={_markup} popover={_popover} sheet={_sheet} annots={_st.An.Count} sel={_sel.Kind} anSel={_anSel} " +

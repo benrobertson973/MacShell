@@ -62,6 +62,7 @@ public partial class App : Application
         AppDomain.CurrentDomain.ProcessExit += (_, _) => { try { NativeMethods.ClipCursorNone(IntPtr.Zero); Takeover.Release(); } catch { } };
         SessionEnding += (_, _) =>
         {
+            try { MacShell.Apps.Preview.PreviewWindow.AutoSaveAll(); } catch { }
             try { if (LoginItem.Enabled) Takeover.LeaveForNextLogin(); else Takeover.Release(); } catch { }
         };
 

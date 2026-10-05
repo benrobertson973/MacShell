@@ -456,6 +456,7 @@ public static class ShellHost
     public static void Quit()
     {
         try { Settings.SaveNow(); } catch { }
+        try { Apps.Preview.PreviewWindow.AutoSaveAll(); } catch { }
         try { WindowGuard.Release(); } catch { }
         try { _hook?.Dispose(); } catch { }
         try { WindowTracker.Stop(); } catch { }

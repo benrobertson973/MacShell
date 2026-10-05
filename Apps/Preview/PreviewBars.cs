@@ -34,7 +34,7 @@ public partial class PreviewWindow
     enum Mb { Select, Sketch, Draw, Shapes, Text, Adjust, Size, Style, Border, Fill, TextStyle, Crop, Count }
     enum Popover { None, Shapes, Style, Border, Fill, Text }
     enum Sheet { None, Size, Export }
-    enum Fmt { Png, Jpeg }
+    enum Fmt { Png, Jpeg, Bmp, Tiff }
 
     readonly Rect[] _tb = new Rect[(int)Tb.Count], _mb = new Rect[(int)Mb.Count];
     Popover _popover;

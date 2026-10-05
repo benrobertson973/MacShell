@@ -161,6 +161,34 @@ public static class PvFile
         return ms.ToArray();
     }
 
+    /// <summary>Opaque pictures as 24-bit colour, others with their alpha: both exact repacks, nothing rounded.</summary>
+    static BitmapSource Lossless(PvImage img)
+    {
+        var px = Straight(img, false);
+        if (HasAlpha(img)) return BitmapSource.Create(img.W, img.H, 72, 72, PixelFormats.Bgra32, null, px, img.W * 4);
+        var rgb = new byte[img.W * img.H * 3];
+        for (int i = 0; i < px.Length; i++) { rgb[i * 3] = (byte)px[i]; rgb[i * 3 + 1] = (byte)(px[i] >> 8); rgb[i * 3 + 2] = (byte)(px[i] >> 16); }
+        return BitmapSource.Create(img.W, img.H, 72, 72, PixelFormats.Bgr24, null, rgb, img.W * 3);
+    }
+
+    public static byte[] EncodeBmp(PvImage img)
+    {
+        var enc = new BmpBitmapEncoder();
+        enc.Frames.Add(BitmapFrame.Create(Lossless(img)));
+        using var ms = new MemoryStream();
+        enc.Save(ms);
+        return ms.ToArray();
+    }
+
+    public static byte[] EncodeTiff(PvImage img)
+    {
+        var enc = new TiffBitmapEncoder { Compression = TiffCompressOption.Lzw };   // lossless
+        enc.Frames.Add(BitmapFrame.Create(Lossless(img)));
+        using var ms = new MemoryStream();
+        enc.Save(ms);
+        return ms.ToArray();
+    }
+
     // ------------------------------------------------------------------ the clipboard
 
     public static void CopyToClipboard(PvImage img, string name)

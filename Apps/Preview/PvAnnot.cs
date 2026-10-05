@@ -1,9 +1,10 @@
 using System.Windows;
 using System.Windows.Media;
+using System.Windows.Media.Imaging;
 
 namespace MacShell.Apps.Preview;
 
-public enum AnKind { Rect, RRect, Oval, Line, Arrow, Star, Bubble, Text, Path }
+public enum AnKind { Rect, RRect, Oval, Line, Arrow, Star, Bubble, Text, Path, Image }
 
 /// <summary>
 /// A Markup annotation (NoDitherOS annot.c): vector shapes, text boxes and freehand strokes kept separate from the
@@ -19,6 +20,9 @@ public sealed class Annot
     public double Font;                  // text size in image pixels
     public uint TextColor;
     public List<Point> Pts = new();      // Path (image pixels)
+    public PvImage Pic;                  // Image: a picture dropped onto the picture (shared, never changed)
+    BitmapSource _picBmp;
+    BitmapSource PicBitmap => _picBmp ??= Pic.ToBitmap();
 
     public Annot Clone()
     {
@@ -30,7 +34,7 @@ public sealed class Annot
     public static string KindName(AnKind k) => k switch
     {
         AnKind.Rect => "Rectangle", AnKind.RRect => "Rounded Rectangle", AnKind.Oval => "Oval", AnKind.Line => "Line", AnKind.Arrow => "Arrow",
-        AnKind.Star => "Star", AnKind.Bubble => "Speech Bubble", AnKind.Text => "Text", AnKind.Path => "Sketch", _ => "Shape",
+        AnKind.Star => "Star", AnKind.Bubble => "Speech Bubble", AnKind.Text => "Text", AnKind.Path => "Sketch", AnKind.Image => "Picture", _ => "Shape",
     };
 
     public bool IsBox => Kind != AnKind.Line && Kind != AnKind.Arrow && Kind != AnKind.Path;
@@ -135,6 +139,16 @@ public sealed class Annot
     /// <summary>annot_draw: image → surface is p · scale + (ox, oy).</summary>
     public void Draw(DrawingContext dc, double scale, double ox, double oy)
     {
+        if (Kind == AnKind.Image)
+        {
+            if (Pic == null) return;
+            Box(out double ix0, out double iy0, out double ix1, out double iy1);
+            var dg = new DrawingGroup();
+            RenderOptions.SetBitmapScalingMode(dg, BitmapScalingMode.HighQuality);
+            dg.Children.Add(new ImageDrawing(PicBitmap, new Rect(ix0 * scale + ox, iy0 * scale + oy, Math.Max(0.01, (ix1 - ix0) * scale), Math.Max(0.01, (iy1 - iy0) * scale))));
+            dc.DrawDrawing(dg);
+            return;
+        }
         dc.PushTransform(new MatrixTransform(scale, 0, 0, scale, ox, oy));
         var geo = ShapeGeometry();
         if (IsBox && (Fill >> 24) != 0 && Kind != AnKind.Text) dc.DrawGeometry(Nd.Br(Fill), null, geo);
@@ -193,7 +207,7 @@ public sealed class Annot
         Box(out double x0, out double y0, out double x1, out double y1);
         bool inside = x >= x0 - tol && x <= x1 + tol && y >= y0 - tol && y <= y1 + tol;
         if (!inside) return false;
-        if (Kind == AnKind.Text || (Fill >> 24) != 0) return true;
+        if (Kind is AnKind.Text or AnKind.Image || (Fill >> 24) != 0) return true;
         if (Kind == AnKind.Oval)
         {
             double cx = (x0 + x1) / 2, cy = (y0 + y1) / 2, rx = Math.Max(1.0, (x1 - x0) / 2), ry = Math.Max(1.0, (y1 - y0) / 2);

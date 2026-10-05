@@ -168,11 +168,76 @@ public partial class PreviewWindow : MacWindow
         Theme.Changed += Redraw;
         Closed += (_, _) => Theme.Changed -= Redraw;
         AllowDrop = true;
-        Drop += (_, e) =>
+        DragOver += (_, e) =>
         {
-            if (e.Data.GetData(DataFormats.FileDrop) is string[] files)
-                foreach (var f in files.Where(PvFile.IsImage)) Open(f);
+            e.Effects = DroppedFiles(e.Data).Length > 0 || HasPictureData(e.Data) ? DragDropEffects.Copy : DragDropEffects.None;
+            e.Handled = true;
         };
+        Drop += (_, e) => { DropPictures(e.Data, e.GetPosition(_canvas)); e.Handled = true; };
+    }
+
+    static string[] DroppedFiles(IDataObject data) =>
+        data.GetData(DataFormats.FileDrop) is string[] files ? files.Where(f => File.Exists(f) && PvFile.IsImage(f)).ToArray() : Array.Empty<string>();
+
+    static bool HasPictureData(IDataObject data) => data.GetDataPresent("PNG") || data.GetDataPresent(DataFormats.Bitmap) || data.GetDataPresent("FileContents");
+
+    /// <summary>
+    /// Pictures dropped onto the picture are placed inside it, where they were let go, as a Markup picture that can
+    /// be moved and resized (and is merged in on Save). Dropped on the toolbar, or with no picture open, they open.
+    /// </summary>
+    void DropPictures(IDataObject data, Point at)
+    {
+        var files = DroppedFiles(data);
+        double x = at.X * Nd.Scale, y = at.Y * Nd.Scale;
+        if (!_loaded || y < BarsH || _sheet != Sheet.None)
+        {
+            foreach (var f in files) Open(f);
+            return;
+        }
+        var pics = new List<PvImage>();
+        foreach (var f in files)
+        {
+            try { pics.Add(PvFile.Load(f)); }
+            catch { ShellHost.ShowAlert($"The file “{Path.GetFileName(f)}” could not be opened.", "It may be damaged or use a file format that Preview doesn’t recognize."); }
+        }
+        if (files.Length == 0)
+        {
+            try
+            {
+                if (data.GetData("PNG") is MemoryStream ms)
+                {
+                    ms.Position = 0;
+                    pics.Add(PvFile.Convert(BitmapDecoder.Create(ms, BitmapCreateOptions.PreservePixelFormat, BitmapCacheOption.OnLoad).Frames[0]));
+                }
+                else if (data.GetData(DataFormats.Bitmap) is BitmapSource bs) pics.Add(PvFile.Convert(bs));
+                else if (data.GetData("FileContents") is MemoryStream fc)   // a picture dragged out of a web browser
+                {
+                    fc.Position = 0;
+                    pics.Add(PvFile.Convert(BitmapDecoder.Create(fc, BitmapCreateOptions.PreservePixelFormat, BitmapCacheOption.OnLoad).Frames[0]));
+                }
+            }
+            catch { }
+        }
+        if (pics.Count == 0) return;
+        var g = GetView();
+        ImgPt(g, x, y, out double cx, out double cy);
+        EndText();
+        double off = 0;
+        foreach (var pic in pics) { PlacePicture(pic, cx + off, cy + off); off += 12 * Unit; }
+        Activate();
+    }
+
+    /// <summary>A picture inside the picture: its own size, made smaller if it wouldn't fit, centred on (cx, cy).</summary>
+    void PlacePicture(PvImage pic, double cx, double cy)
+    {
+        double w = pic.W, h = pic.H;
+        double k = Math.Min(1.0, Math.Min(_st.Img.W * 0.6 / w, _st.Img.H * 0.6 / h));
+        w *= k; h *= k;
+        cx = Math.Clamp(cx, w / 2, Math.Max(w / 2, _st.Img.W - w / 2));
+        cy = Math.Clamp(cy, h / 2, Math.Max(h / 2, _st.Img.H - h / 2));
+        var a = new Annot { Kind = AnKind.Image, Pic = pic, X0 = cx - w / 2, Y0 = cy - h / 2, X1 = cx + w / 2, Y1 = cy + h / 2 };
+        if (!_markup) _markup = true;   // (its handles and styles are Markup's)
+        AddAnnot(a);
     }
 
     void Redraw() => _canvas.InvalidateVisual();
@@ -1335,7 +1400,7 @@ public partial class PreviewWindow : MacWindow
     static bool CanEncode(string name)
     {
         string x = Path.GetExtension(name ?? "").ToLowerInvariant();
-        return x is ".png" or ".jpg" or ".jpeg";
+        return FormatFor(x) != null;
     }
 
     public void Save()
@@ -1344,7 +1409,7 @@ public partial class PreviewWindow : MacWindow
         EndText();
         if (_untitled || _readonly || !CanEncode(_name)) { BeginExport(); return; }
         _saveIsExport = false;
-        Write(_path, CanEncode(_name) && Path.GetExtension(_name).ToLowerInvariant() == ".png" ? Fmt.Png : Fmt.Jpeg, 90, unique: false);
+        Write(_path, FormatFor(Path.GetExtension(_name).ToLowerInvariant()).Value, 90, unique: false);
     }
 
     void ExportFinish()
@@ -1371,7 +1436,7 @@ public partial class PreviewWindow : MacWindow
         Task.Run(() =>
         {
             var flat = state.Flatten();
-            byte[] data = fmt == Fmt.Jpeg ? PvFile.EncodeJpeg(flat, quality) : PvFile.EncodePng(flat);
+            byte[] data = Encode(flat, fmt, quality);
             string target = unique ? UniquePath(path) : path;
             string tmp = target + ".saving";
             File.WriteAllBytes(tmp, data);
@@ -1506,19 +1571,76 @@ public partial class PreviewWindow : MacWindow
         if (!_untitled && Dirty) LoadFile(_path, first: false);
     }
 
+    /// <summary>
+    /// Closing an edited picture saves it, without asking: in place when Preview can write its format exactly
+    /// (PNG, JPEG, BMP, TIFF); otherwise (GIF, WebP, HEIC … or a new picture) as a PNG beside it / in Pictures —
+    /// never dithered, and the original is left as it was. If it can't be saved the window stays open.
+    /// </summary>
     protected override void OnClosing(CancelEventArgs e)
     {
         base.OnClosing(e);
         if (e.Cancel || !Dirty || !_loaded) return;
-        string r = ShellHost.Alert($"Do you want to save the changes made to the document “{_name}”?", "Your changes will be lost if you don’t save them.", "Don’t Save", "Cancel", "Save…");
-        if (r == "Don’t Save") return;
-        e.Cancel = true;
-        if (r == "Save…")
+        EndText();
+        try { AutoSave(); }
+        catch (Exception ex)
         {
-            _closeAfterSave = true;
-            Save();
+            e.Cancel = true;
+            ShellHost.ShowAlert($"“{_name}” couldn’t be saved.", ex is UnauthorizedAccessException or IOException ? "The disk may be full, read-only or removed." : ex.Message);
         }
     }
+
+    /// <summary>MacShell quitting / Windows signing out: every edited picture is saved (closing may not get the chance).</summary>
+    public static void AutoSaveAll()
+    {
+        foreach (var w in All.ToList())
+        {
+            if (!w.Dirty || !w._loaded) continue;
+            try { w.EndText(); w.AutoSave(); } catch (Exception ex) { App.Log("Preview autosave failed: " + ex.Message); }
+        }
+    }
+
+    void AutoSave()
+    {
+        string ext = Path.GetExtension(_name).ToLowerInvariant();
+        string target;
+        Fmt fmt;
+        if (!_untitled && !_readonly && FormatFor(ext) is Fmt f)
+        {
+            target = _path;
+            fmt = f;
+        }
+        else
+        {
+            string dir = _untitled || _readonly ? Environment.GetFolderPath(Environment.SpecialFolder.MyPictures) : Path.GetDirectoryName(_path);
+            target = UniquePath(Path.Combine(dir, (_untitled ? "Untitled" : Path.GetFileNameWithoutExtension(_name)) + ".png"));
+            fmt = Fmt.Png;
+        }
+        var data = Encode(_st.Flatten(), fmt, 90);
+        string tmp = target + ".saving";
+        File.WriteAllBytes(tmp, data);
+        File.Move(tmp, target, true);
+        _savedChange = _change;
+        if (!_untitled && string.Equals(target, _path, StringComparison.OrdinalIgnoreCase)) return;
+        Settings.AddRecentDoc(target);
+    }
+
+    /// <summary>The format Preview writes a file of this kind in, exactly (null: it can't, without losing detail).</summary>
+    static Fmt? FormatFor(string ext) => ext switch
+    {
+        ".png" => Fmt.Png,
+        ".jpg" or ".jpeg" or ".jpe" or ".jfif" => Fmt.Jpeg,
+        ".bmp" or ".dib" => Fmt.Bmp,
+        ".tif" or ".tiff" => Fmt.Tiff,
+        _ => null,
+    };
+
+    static byte[] Encode(PvImage img, Fmt fmt, int quality) => fmt switch
+    {
+        Fmt.Jpeg => PvFile.EncodeJpeg(img, quality),
+        Fmt.Bmp => PvFile.EncodeBmp(img),
+        Fmt.Tiff => PvFile.EncodeTiff(img),
+        _ => PvFile.EncodePng(img),
+    };
 
     // ------------------------------------------------------------------ for the menu bar and panels
 
