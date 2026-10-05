@@ -126,7 +126,7 @@ public static class WindowTracker
     static void OnWinEvent(IntPtr hook, uint ev, IntPtr hwnd, int idObject, int idChild, uint thread, uint time)
     {
         if (idObject != 0 || idChild != 0) return; // only window objects
-        if (ev == EVENT_OBJECT_SHOW) Takeover.OnWindowShown(hwnd);
+        if (ev == EVENT_OBJECT_SHOW) { Takeover.OnWindowShown(hwnd); WindowGuard.OnWindowShown(hwnd); }
         if (ev == EVENT_SYSTEM_MOVESIZESTART) { WindowGuard.OnMoveSizeStart(hwnd); return; }
         if (ev == EVENT_SYSTEM_MOVESIZEEND) { WindowGuard.OnMoveSizeEnd(hwnd); return; }
         if (ev == EVENT_SYSTEM_FOREGROUND) OnForeground(hwnd);

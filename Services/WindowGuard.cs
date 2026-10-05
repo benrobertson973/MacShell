@@ -29,6 +29,7 @@ public static class WindowGuard
     public static void OnMoveSizeStart(IntPtr hwnd)
     {
         _bottomResize = false;
+        _userMoved.Add(hwnd);   // the user is placing this window: open-time fitting stops for it
         if (!ShellHost.TakeoverEnabled || !IsGuardable(hwnd)) return;
         GetCursorPos(out var cur);
         int hit = HitTest(hwnd, cur);
@@ -71,36 +72,63 @@ public static class WindowGuard
     // ------------------------------------------------------------------ new windows: never open under the Dock
 
     static readonly HashSet<IntPtr> _seen = new();
+    static readonly HashSet<IntPtr> _userMoved = new();
     static bool _primed;
 
     /// <summary>
     /// Called after every window-list refresh. Windows MacShell hasn't seen before are fitted between the menu bar
-    /// and the Dock — once when they appear, and again shortly after, since many apps restore their saved
-    /// position right after showing. Windows already open when MacShell starts are left where they are.
+    /// and the Dock. Windows already open when MacShell starts are left where they are.
     /// </summary>
     public static void NoticeWindows(IEnumerable<IntPtr> windows)
     {
         var fresh = new List<IntPtr>();
         foreach (var h in windows) if (_seen.Add(h) && _primed) fresh.Add(h);
         _seen.RemoveWhere(h => !IsWindow(h));
+        _userMoved.RemoveWhere(h => !IsWindow(h));
         _primed = true;
-        foreach (var h in fresh)
+        foreach (var h in fresh) ScheduleFit(h);
+    }
+
+    /// <summary>
+    /// A window was shown — also an app reopening a window it had hidden (tray apps reuse theirs), which the
+    /// window list doesn't see as new.
+    /// </summary>
+    public static void OnWindowShown(IntPtr hwnd)
+    {
+        if (!_primed || !ShellHost.TakeoverEnabled || GetAncestor(hwnd, GA_ROOT) != hwnd) return;
+        GetWindowThreadProcessId(hwnd, out uint pid);
+        if (pid == (uint)Environment.ProcessId) return;
+        _userMoved.Remove(hwnd);   // a fresh open: whatever the user did with it last time no longer counts
+        ScheduleFit(hwnd);
+    }
+
+    /// <summary>
+    /// Checks the window several times over its first seconds: many apps move their window into its saved
+    /// position after showing it. Stops as soon as the user moves or resizes it — dragging a window past the
+    /// Dock on purpose is allowed.
+    /// </summary>
+    static void ScheduleFit(IntPtr hwnd)
+    {
+        foreach (int ms in new[] { 150, 500, 1200, 2500 })
         {
-            var hwnd = h;
-            foreach (int ms in new[] { 150, 900 })
+            var t = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(ms) };
+            t.Tick += (_, _) =>
             {
-                var t = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(ms) };
-                t.Tick += (_, _) => { t.Stop(); if (hwnd != _active && (GetAsyncKeyState(VK_LBUTTON) & 0x8000) == 0) KeepAboveDock(hwnd, move: true); };
-                t.Start();
-            }
+                t.Stop();
+                if (_userMoved.Contains(hwnd) || hwnd == _active || (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0) return;
+                KeepAboveDock(hwnd, move: true);
+            };
+            t.Start();
         }
     }
 
+    /// <summary>Whether a window belongs to the primary display (the one with the Dock). Not by its centre: a tall
+    /// window opened low has its centre below the screen, and those are exactly the ones to fix.</summary>
     static bool OnPrimary(RECT vb)
     {
         var scr = ShellHost.ScreenPx;
-        int cx = (vb.Left + vb.Right) / 2, cy = (vb.Top + vb.Bottom) / 2;
-        return cx >= scr.Left && cx < scr.Right && cy >= scr.Top && cy < scr.Bottom;
+        int cx = (vb.Left + vb.Right) / 2;
+        return cx >= scr.Left && cx < scr.Right && vb.Top < scr.Bottom && vb.Bottom > scr.Top;
     }
 
     /// <summary>
