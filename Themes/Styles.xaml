@@ -1,0 +1,759 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:c="clr-namespace:MacShell.Controls">
+
+    <!-- ============================================================ Scrollbars (overlay, thin) -->
+    <Style x:Key="MacScrollThumb" TargetType="Thumb">
+        <Setter Property="OverridesDefaultStyle" Value="True"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Thumb">
+                    <Border x:Name="b" Background="{DynamicResource ScrollThumbBrush}" CornerRadius="3.5" Margin="0"/>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style x:Key="MacRepeat" TargetType="RepeatButton">
+        <Setter Property="OverridesDefaultStyle" Value="True"/>
+        <Setter Property="Focusable" Value="False"/>
+        <Setter Property="IsTabStop" Value="False"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="RepeatButton">
+                    <Border Background="Transparent"/>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style TargetType="ScrollBar">
+        <Setter Property="OverridesDefaultStyle" Value="True"/>
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="Width" Value="11"/>
+        <Setter Property="MinWidth" Value="0"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ScrollBar">
+                    <Border x:Name="bg" Background="Transparent" CornerRadius="0">
+                        <Track x:Name="PART_Track" IsDirectionReversed="True" Margin="2,2,2,2">
+                            <Track.DecreaseRepeatButton><RepeatButton Style="{StaticResource MacRepeat}" Command="ScrollBar.PageUpCommand"/></Track.DecreaseRepeatButton>
+                            <Track.IncreaseRepeatButton><RepeatButton Style="{StaticResource MacRepeat}" Command="ScrollBar.PageDownCommand"/></Track.IncreaseRepeatButton>
+                            <Track.Thumb><Thumb x:Name="thumb" Style="{StaticResource MacScrollThumb}" Margin="1.5,0"/></Track.Thumb>
+                        </Track>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="bg" Property="Background" Value="{DynamicResource ScrollTrackBrush}"/>
+                            <Setter TargetName="thumb" Property="Margin" Value="0"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+        <Style.Triggers>
+            <Trigger Property="Orientation" Value="Horizontal">
+                <Setter Property="Width" Value="Auto"/>
+                <Setter Property="Height" Value="11"/>
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="ScrollBar">
+                            <Border x:Name="bg" Background="Transparent">
+                                <Track x:Name="PART_Track" IsDirectionReversed="False" Margin="2">
+                                    <Track.DecreaseRepeatButton><RepeatButton Style="{StaticResource MacRepeat}" Command="ScrollBar.PageLeftCommand"/></Track.DecreaseRepeatButton>
+                                    <Track.IncreaseRepeatButton><RepeatButton Style="{StaticResource MacRepeat}" Command="ScrollBar.PageRightCommand"/></Track.IncreaseRepeatButton>
+                                    <Track.Thumb><Thumb x:Name="thumb" Style="{StaticResource MacScrollThumb}" Margin="0,1.5"/></Track.Thumb>
+                                </Track>
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="bg" Property="Background" Value="{DynamicResource ScrollTrackBrush}"/>
+                                    <Setter TargetName="thumb" Property="Margin" Value="0"/>
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Trigger>
+        </Style.Triggers>
+    </Style>
+
+    <Style TargetType="ScrollViewer">
+        <Setter Property="OverridesDefaultStyle" Value="True"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ScrollViewer">
+                    <Grid x:Name="root" Background="{TemplateBinding Background}">
+                        <ScrollContentPresenter x:Name="PART_ScrollContentPresenter" CanContentScroll="{TemplateBinding CanContentScroll}" Margin="{TemplateBinding Padding}"/>
+                        <ScrollBar x:Name="PART_VerticalScrollBar" HorizontalAlignment="Right" Orientation="Vertical"
+                                   Value="{TemplateBinding VerticalOffset}" Maximum="{TemplateBinding ScrollableHeight}"
+                                   ViewportSize="{TemplateBinding ViewportHeight}" Visibility="{TemplateBinding ComputedVerticalScrollBarVisibility}"
+                                   Opacity="0"/>
+                        <ScrollBar x:Name="PART_HorizontalScrollBar" VerticalAlignment="Bottom" Orientation="Horizontal"
+                                   Value="{TemplateBinding HorizontalOffset}" Maximum="{TemplateBinding ScrollableWidth}"
+                                   ViewportSize="{TemplateBinding ViewportWidth}" Visibility="{TemplateBinding ComputedHorizontalScrollBarVisibility}"
+                                   Opacity="0"/>
+                    </Grid>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Trigger.EnterActions>
+                                <BeginStoryboard>
+                                    <Storyboard>
+                                        <DoubleAnimation Storyboard.TargetName="PART_VerticalScrollBar" Storyboard.TargetProperty="Opacity" To="1" Duration="0:0:0.15"/>
+                                        <DoubleAnimation Storyboard.TargetName="PART_HorizontalScrollBar" Storyboard.TargetProperty="Opacity" To="1" Duration="0:0:0.15"/>
+                                    </Storyboard>
+                                </BeginStoryboard>
+                            </Trigger.EnterActions>
+                            <Trigger.ExitActions>
+                                <BeginStoryboard>
+                                    <Storyboard>
+                                        <DoubleAnimation Storyboard.TargetName="PART_VerticalScrollBar" Storyboard.TargetProperty="Opacity" To="0" BeginTime="0:0:0.6" Duration="0:0:0.3"/>
+                                        <DoubleAnimation Storyboard.TargetName="PART_HorizontalScrollBar" Storyboard.TargetProperty="Opacity" To="0" BeginTime="0:0:0.6" Duration="0:0:0.3"/>
+                                    </Storyboard>
+                                </BeginStoryboard>
+                            </Trigger.ExitActions>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- ============================================================ Menus -->
+    <Style x:Key="{x:Static MenuItem.SeparatorStyleKey}" TargetType="Separator">
+        <Setter Property="OverridesDefaultStyle" Value="True"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Separator">
+                    <Border Height="1" Margin="10,5" Background="{DynamicResource MenuSeparatorBrush}" SnapsToDevicePixels="True"/>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <ControlTemplate x:Key="MacSubmenuItem" TargetType="MenuItem">
+        <Border x:Name="bd" Height="22" Margin="5,0" CornerRadius="4" Background="Transparent" SnapsToDevicePixels="True">
+            <Grid Margin="0,0,9,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="17"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <c:SymbolIcon x:Name="check" Symbol="checkmark" Width="10" Height="10" StrokeWidth="2.6" Margin="4,0,0,0" Visibility="Hidden"
+                              Foreground="{DynamicResource MenuTextBrush}" HorizontalAlignment="Left"/>
+                <ContentPresenter x:Name="icon" Grid.Column="1" ContentSource="Icon" Width="16" Height="16" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                <ContentPresenter x:Name="hdr" Grid.Column="2" ContentSource="Header" RecognizesAccessKey="False" VerticalAlignment="Center"
+                                  TextElement.Foreground="{DynamicResource MenuTextBrush}" TextElement.FontSize="13"/>
+                <TextBlock x:Name="gesture" Grid.Column="3" Text="{TemplateBinding InputGestureText}" Margin="28,0,0,0" VerticalAlignment="Center"
+                           Foreground="{DynamicResource MenuShortcutBrush}" FontSize="13"/>
+            </Grid>
+        </Border>
+        <ControlTemplate.Triggers>
+            <Trigger Property="Icon" Value="{x:Null}">
+                <Setter TargetName="icon" Property="Visibility" Value="Collapsed"/>
+            </Trigger>
+            <Trigger Property="IsChecked" Value="True">
+                <Setter TargetName="check" Property="Visibility" Value="Visible"/>
+            </Trigger>
+            <Trigger Property="IsHighlighted" Value="True">
+                <Setter TargetName="bd" Property="Background" Value="{DynamicResource AccentBrush}"/>
+                <Setter TargetName="hdr" Property="TextElement.Foreground" Value="White"/>
+                <Setter TargetName="gesture" Property="Foreground" Value="White"/>
+                <Setter TargetName="check" Property="Foreground" Value="White"/>
+            </Trigger>
+            <Trigger Property="IsEnabled" Value="False">
+                <Setter TargetName="bd" Property="Background" Value="Transparent"/>
+                <Setter TargetName="hdr" Property="TextElement.Foreground" Value="{DynamicResource MenuDisabledTextBrush}"/>
+                <Setter TargetName="gesture" Property="Foreground" Value="{DynamicResource MenuDisabledTextBrush}"/>
+            </Trigger>
+        </ControlTemplate.Triggers>
+    </ControlTemplate>
+
+    <ControlTemplate x:Key="MacSubmenuHeader" TargetType="MenuItem">
+        <Border x:Name="bd" Height="22" Margin="5,0" CornerRadius="4" Background="Transparent" SnapsToDevicePixels="True">
+            <Grid Margin="0,0,7,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="17"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <c:SymbolIcon x:Name="check" Symbol="checkmark" Width="10" Height="10" StrokeWidth="2.6" Margin="4,0,0,0" Visibility="Hidden"
+                              Foreground="{DynamicResource MenuTextBrush}" HorizontalAlignment="Left"/>
+                <ContentPresenter x:Name="icon" Grid.Column="1" ContentSource="Icon" Width="16" Height="16" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                <ContentPresenter x:Name="hdr" Grid.Column="2" ContentSource="Header" RecognizesAccessKey="False" VerticalAlignment="Center"
+                                  TextElement.Foreground="{DynamicResource MenuTextBrush}" TextElement.FontSize="13"/>
+                <c:SymbolIcon x:Name="chev" Grid.Column="3" Symbol="chevron.right" Width="10" Height="10" StrokeWidth="2.4" Margin="28,0,0,0"
+                              Foreground="{DynamicResource MenuTextBrush}"/>
+                <Popup x:Name="PART_Popup" Placement="Right" HorizontalOffset="-2" VerticalOffset="-19" AllowsTransparency="True"
+                       IsOpen="{Binding IsSubmenuOpen, RelativeSource={RelativeSource TemplatedParent}}" Focusable="False"
+                       PopupAnimation="None">
+                    <Border Margin="14,14,14,20" Background="{DynamicResource MenuBackgroundBrush}" BorderBrush="{DynamicResource MenuBorderBrush}"
+                            BorderThickness="0.5" CornerRadius="7" TextElement.FontFamily="{DynamicResource MacFont}">
+                        <Border.Effect><DropShadowEffect BlurRadius="22" ShadowDepth="6" Direction="270" Opacity="0.28"/></Border.Effect>
+                        <Border BorderBrush="{DynamicResource MenuInnerBorderBrush}" BorderThickness="0.5" CornerRadius="6.5">
+                            <ScrollViewer CanContentScroll="False" VerticalScrollBarVisibility="Auto" MaxHeight="760">
+                                <StackPanel IsItemsHost="True" Margin="0,5" KeyboardNavigation.DirectionalNavigation="Cycle"/>
+                            </ScrollViewer>
+                        </Border>
+                    </Border>
+                </Popup>
+            </Grid>
+        </Border>
+        <ControlTemplate.Triggers>
+            <Trigger Property="Icon" Value="{x:Null}">
+                <Setter TargetName="icon" Property="Visibility" Value="Collapsed"/>
+            </Trigger>
+            <Trigger Property="IsChecked" Value="True">
+                <Setter TargetName="check" Property="Visibility" Value="Visible"/>
+            </Trigger>
+            <Trigger Property="IsHighlighted" Value="True">
+                <Setter TargetName="bd" Property="Background" Value="{DynamicResource AccentBrush}"/>
+                <Setter TargetName="hdr" Property="TextElement.Foreground" Value="White"/>
+                <Setter TargetName="chev" Property="Foreground" Value="White"/>
+            </Trigger>
+            <Trigger Property="IsEnabled" Value="False">
+                <Setter TargetName="hdr" Property="TextElement.Foreground" Value="{DynamicResource MenuDisabledTextBrush}"/>
+                <Setter TargetName="chev" Property="Foreground" Value="{DynamicResource MenuDisabledTextBrush}"/>
+            </Trigger>
+        </ControlTemplate.Triggers>
+    </ControlTemplate>
+
+    <!-- top level (menu bar) -->
+    <ControlTemplate x:Key="MacTopLevelHeader" TargetType="MenuItem">
+        <Grid>
+            <Border x:Name="bd" Margin="0,1" Padding="{TemplateBinding Padding}" CornerRadius="4" Background="Transparent" SnapsToDevicePixels="True">
+                <ContentPresenter ContentSource="Header" RecognizesAccessKey="False" VerticalAlignment="Center" HorizontalAlignment="Center"/>
+            </Border>
+            <Popup x:Name="PART_Popup" Placement="Bottom" VerticalOffset="-4" HorizontalOffset="-14" AllowsTransparency="True" PopupAnimation="None"
+                   IsOpen="{Binding IsSubmenuOpen, RelativeSource={RelativeSource TemplatedParent}}" Focusable="False">
+                <Border Margin="14,4,14,20" Background="{DynamicResource MenuBackgroundBrush}" BorderBrush="{DynamicResource MenuBorderBrush}"
+                        BorderThickness="0.5" CornerRadius="7" TextElement.FontFamily="{DynamicResource MacFont}" MinWidth="120">
+                    <Border.Effect><DropShadowEffect BlurRadius="22" ShadowDepth="6" Direction="270" Opacity="0.28"/></Border.Effect>
+                    <Border BorderBrush="{DynamicResource MenuInnerBorderBrush}" BorderThickness="0.5" CornerRadius="6.5">
+                        <ScrollViewer CanContentScroll="False" VerticalScrollBarVisibility="Auto" MaxHeight="760">
+                            <StackPanel IsItemsHost="True" Margin="0,5" KeyboardNavigation.DirectionalNavigation="Cycle"/>
+                        </ScrollViewer>
+                    </Border>
+                </Border>
+            </Popup>
+        </Grid>
+        <ControlTemplate.Triggers>
+            <Trigger Property="IsSubmenuOpen" Value="True">
+                <Setter TargetName="bd" Property="Background" Value="{DynamicResource MenuBarHighlightBrush}"/>
+            </Trigger>
+        </ControlTemplate.Triggers>
+    </ControlTemplate>
+
+    <ControlTemplate x:Key="MacTopLevelItem" TargetType="MenuItem">
+        <Border x:Name="bd" Margin="0,1" Padding="{TemplateBinding Padding}" CornerRadius="4" Background="Transparent" SnapsToDevicePixels="True">
+            <ContentPresenter ContentSource="Header" RecognizesAccessKey="False" VerticalAlignment="Center" HorizontalAlignment="Center"/>
+        </Border>
+        <ControlTemplate.Triggers>
+            <Trigger Property="IsPressed" Value="True">
+                <Setter TargetName="bd" Property="Background" Value="{DynamicResource MenuBarHighlightBrush}"/>
+            </Trigger>
+        </ControlTemplate.Triggers>
+    </ControlTemplate>
+
+    <Style TargetType="MenuItem">
+        <Setter Property="OverridesDefaultStyle" Value="True"/>
+        <Setter Property="FontFamily" Value="{DynamicResource MacFont}"/>
+        <Setter Property="FontSize" Value="13"/>
+        <Setter Property="Template" Value="{StaticResource MacSubmenuItem}"/>
+        <Style.Triggers>
+            <Trigger Property="Role" Value="SubmenuHeader">
+                <Setter Property="Template" Value="{StaticResource MacSubmenuHeader}"/>
+            </Trigger>
+            <Trigger Property="Role" Value="TopLevelHeader">
+                <Setter Property="Template" Value="{StaticResource MacTopLevelHeader}"/>
+                <Setter Property="Padding" Value="9,0"/>
+            </Trigger>
+            <Trigger Property="Role" Value="TopLevelItem">
+                <Setter Property="Template" Value="{StaticResource MacTopLevelItem}"/>
+                <Setter Property="Padding" Value="9,0"/>
+            </Trigger>
+        </Style.Triggers>
+    </Style>
+
+    <Style TargetType="ContextMenu">
+        <Setter Property="OverridesDefaultStyle" Value="True"/>
+        <Setter Property="HasDropShadow" Value="False"/>
+        <Setter Property="FontFamily" Value="{DynamicResource MacFont}"/>
+        <Setter Property="FontSize" Value="13"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ContextMenu">
+                    <Border Margin="14,6,14,20" Background="{DynamicResource MenuBackgroundBrush}" BorderBrush="{DynamicResource MenuBorderBrush}"
+                            BorderThickness="0.5" CornerRadius="7" MinWidth="140">
+                        <Border.Effect><DropShadowEffect BlurRadius="22" ShadowDepth="6" Direction="270" Opacity="0.28"/></Border.Effect>
+                        <Border BorderBrush="{DynamicResource MenuInnerBorderBrush}" BorderThickness="0.5" CornerRadius="6.5">
+                            <ScrollViewer CanContentScroll="False" VerticalScrollBarVisibility="Auto" MaxHeight="760">
+                                <StackPanel IsItemsHost="True" Margin="0,5" KeyboardNavigation.DirectionalNavigation="Cycle"/>
+                            </ScrollViewer>
+                        </Border>
+                    </Border>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style TargetType="Menu">
+        <Setter Property="OverridesDefaultStyle" Value="True"/>
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Menu">
+                    <StackPanel IsItemsHost="True" Orientation="Horizontal"/>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- ============================================================ Tooltip -->
+    <Style TargetType="ToolTip">
+        <Setter Property="OverridesDefaultStyle" Value="True"/>
+        <Setter Property="HasDropShadow" Value="False"/>
+        <Setter Property="FontFamily" Value="{DynamicResource MacFont}"/>
+        <Setter Property="FontSize" Value="11"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ToolTip">
+                    <Border Margin="8,4,8,12" Background="{DynamicResource TooltipBackgroundBrush}" BorderBrush="{DynamicResource MenuBorderBrush}"
+                            BorderThickness="0.5" CornerRadius="4" Padding="7,3">
+                        <Border.Effect><DropShadowEffect BlurRadius="10" ShadowDepth="2" Direction="270" Opacity="0.2"/></Border.Effect>
+                        <ContentPresenter TextElement.Foreground="{DynamicResource LabelBrush}"/>
+                    </Border>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- ============================================================ Buttons -->
+    <Style x:Key="MacButton" TargetType="Button">
+        <Setter Property="OverridesDefaultStyle" Value="True"/>
+        <Setter Property="FontFamily" Value="{DynamicResource MacFont}"/>
+        <Setter Property="FontSize" Value="13"/>
+        <Setter Property="Foreground" Value="{DynamicResource LabelBrush}"/>
+        <Setter Property="Background" Value="{DynamicResource ControlBrush}"/>
+        <Setter Property="Height" Value="22"/>
+        <Setter Property="MinWidth" Value="70"/>
+        <Setter Property="Padding" Value="12,0"/>
+        <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Grid>
+                        <Border CornerRadius="5.5" Background="{DynamicResource ControlBottomBorderBrush}" Margin="0,0,0,-0.6"/>
+                        <Border x:Name="bd" CornerRadius="5" Background="{TemplateBinding Background}" BorderBrush="{DynamicResource ControlBorderBrush}"
+                                BorderThickness="0.5" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" RecognizesAccessKey="False"/>
+                        </Border>
+                        <Border x:Name="press" CornerRadius="5" Background="{DynamicResource PressedBrush}" Visibility="Collapsed"/>
+                    </Grid>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsPressed" Value="True">
+                            <Setter TargetName="press" Property="Visibility" Value="Visible"/>
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Opacity" Value="0.45"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style x:Key="MacDefaultButton" TargetType="Button" BasedOn="{StaticResource MacButton}">
+        <Setter Property="Foreground" Value="White"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Grid>
+                        <Border x:Name="bd" CornerRadius="5" BorderThickness="0.5" BorderBrush="#26000000" Padding="{TemplateBinding Padding}"
+                                Background="{DynamicResource AccentBrush}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" RecognizesAccessKey="False"/>
+                        </Border>
+                        <Border CornerRadius="5" Margin="0.5" BorderThickness="0,0.6,0,0" BorderBrush="#40FFFFFF" IsHitTestVisible="False"/>
+                        <Border x:Name="press" CornerRadius="5" Background="#26000000" Visibility="Collapsed"/>
+                    </Grid>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsPressed" Value="True">
+                            <Setter TargetName="press" Property="Visibility" Value="Visible"/>
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Opacity" Value="0.45"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style x:Key="ToolbarButton" TargetType="ButtonBase">
+        <Setter Property="OverridesDefaultStyle" Value="True"/>
+        <Setter Property="Foreground" Value="{DynamicResource SecondaryLabelBrush}"/>
+        <Setter Property="Height" Value="28"/>
+        <Setter Property="MinWidth" Value="30"/>
+        <Setter Property="Padding" Value="6,0"/>
+        <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+        <Setter Property="Focusable" Value="False"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ButtonBase">
+                    <Border x:Name="bd" CornerRadius="6" Background="Transparent" Padding="{TemplateBinding Padding}">
+                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" RecognizesAccessKey="False"/>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="bd" Property="Background" Value="{DynamicResource HoverBrush}"/>
+                        </Trigger>
+                        <Trigger Property="IsPressed" Value="True">
+                            <Setter TargetName="bd" Property="Background" Value="{DynamicResource PressedBrush}"/>
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Opacity" Value="0.35"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style x:Key="PlainButton" TargetType="ButtonBase">
+        <Setter Property="OverridesDefaultStyle" Value="True"/>
+        <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ButtonBase">
+                    <Border Background="{TemplateBinding Background}" Padding="{TemplateBinding Padding}">
+                        <ContentPresenter RecognizesAccessKey="False" HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}" VerticalAlignment="{TemplateBinding VerticalContentAlignment}"/>
+                    </Border>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style x:Key="SegmentButton" TargetType="RadioButton">
+        <Setter Property="OverridesDefaultStyle" Value="True"/>
+        <Setter Property="Foreground" Value="{DynamicResource SecondaryLabelBrush}"/>
+        <Setter Property="Width" Value="32"/>
+        <Setter Property="Height" Value="24"/>
+        <Setter Property="Focusable" Value="False"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="RadioButton">
+                    <Border x:Name="bd" CornerRadius="5" Background="Transparent" Margin="1,0">
+                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="bd" Property="Background" Value="{DynamicResource HoverBrush}"/>
+                        </Trigger>
+                        <Trigger Property="IsChecked" Value="True">
+                            <Setter TargetName="bd" Property="Background" Value="{DynamicResource PressedBrush}"/>
+                            <Setter Property="Foreground" Value="{DynamicResource LabelBrush}"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- ============================================================ Text fields -->
+    <Style x:Key="MacTextField" TargetType="TextBox">
+        <Setter Property="OverridesDefaultStyle" Value="True"/>
+        <Setter Property="FontFamily" Value="{DynamicResource MacFont}"/>
+        <Setter Property="FontSize" Value="13"/>
+        <Setter Property="Foreground" Value="{DynamicResource LabelBrush}"/>
+        <Setter Property="CaretBrush" Value="{DynamicResource LabelBrush}"/>
+        <Setter Property="SelectionBrush" Value="{DynamicResource AccentBrush}"/>
+        <Setter Property="SelectionOpacity" Value="0.35"/>
+        <Setter Property="Height" Value="22"/>
+        <Setter Property="Padding" Value="4,0"/>
+        <Setter Property="VerticalContentAlignment" Value="Center"/>
+        <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="TextBox">
+                    <Grid>
+                        <Border x:Name="ring" Margin="-3" CornerRadius="7.5" BorderThickness="3.5" BorderBrush="{DynamicResource FocusRingBrush}" Visibility="Collapsed"/>
+                        <Border x:Name="bd" CornerRadius="5" Background="{DynamicResource TextFieldBrush}" BorderBrush="{DynamicResource ControlBorderBrush}" BorderThickness="0.5">
+                            <ScrollViewer x:Name="PART_ContentHost" Margin="{TemplateBinding Padding}" VerticalAlignment="Center" Focusable="False"
+                                          HorizontalScrollBarVisibility="Hidden" VerticalScrollBarVisibility="Hidden"/>
+                        </Border>
+                        <TextBlock x:Name="ph" Text="{TemplateBinding Tag}" Foreground="{DynamicResource TertiaryLabelBrush}" Margin="7,0,0,0"
+                                   VerticalAlignment="Center" IsHitTestVisible="False" Visibility="Collapsed" FontSize="{TemplateBinding FontSize}"/>
+                    </Grid>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsKeyboardFocused" Value="True">
+                            <Setter TargetName="ring" Property="Visibility" Value="Visible"/>
+                        </Trigger>
+                        <Trigger Property="Text" Value="">
+                            <Setter TargetName="ph" Property="Visibility" Value="Visible"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style x:Key="MacSearchField" TargetType="TextBox" BasedOn="{StaticResource MacTextField}">
+        <Setter Property="Height" Value="28"/>
+        <Setter Property="Padding" Value="26,0,24,0"/>
+        <Setter Property="Tag" Value="Search"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="TextBox">
+                    <Grid>
+                        <Border x:Name="ring" Margin="-3" CornerRadius="9.5" BorderThickness="3.5" BorderBrush="{DynamicResource FocusRingBrush}" Visibility="Collapsed"/>
+                        <Border x:Name="bd" CornerRadius="7" Background="{DynamicResource SearchFieldBrush}" BorderBrush="{DynamicResource GroupBoxBorderBrush}" BorderThickness="0.5">
+                            <ScrollViewer x:Name="PART_ContentHost" Margin="{TemplateBinding Padding}" VerticalAlignment="Center" Focusable="False"
+                                          HorizontalScrollBarVisibility="Hidden" VerticalScrollBarVisibility="Hidden"/>
+                        </Border>
+                        <c:SymbolIcon Symbol="magnifyingglass" Width="14" Height="14" HorizontalAlignment="Left" Margin="8,0,0,0" StrokeWidth="2.1"
+                                      Foreground="{DynamicResource SecondaryLabelBrush}" IsHitTestVisible="False"/>
+                        <TextBlock x:Name="ph" Text="{TemplateBinding Tag}" Foreground="{DynamicResource TertiaryLabelBrush}" Margin="27,0,0,0"
+                                   VerticalAlignment="Center" IsHitTestVisible="False" Visibility="Collapsed"/>
+                    </Grid>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsKeyboardFocused" Value="True">
+                            <Setter TargetName="ring" Property="Visibility" Value="Visible"/>
+                        </Trigger>
+                        <Trigger Property="Text" Value="">
+                            <Setter TargetName="ph" Property="Visibility" Value="Visible"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- ============================================================ Switch / checkbox / radio -->
+    <Style x:Key="MacSwitch" TargetType="CheckBox">
+        <Setter Property="OverridesDefaultStyle" Value="True"/>
+        <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+        <Setter Property="Cursor" Value="Arrow"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="CheckBox">
+                    <Grid Width="26" Height="15" Background="Transparent">
+                        <Border x:Name="track" CornerRadius="7.5" Background="{DynamicResource SwitchOffBrush}"/>
+                        <Ellipse x:Name="knob" Width="13" Height="13" Fill="White" HorizontalAlignment="Left" Margin="1,0,0,0">
+                            <Ellipse.RenderTransform><TranslateTransform x:Name="tx" X="0"/></Ellipse.RenderTransform>
+                            <Ellipse.Effect><DropShadowEffect BlurRadius="3" ShadowDepth="0.5" Direction="270" Opacity="0.35"/></Ellipse.Effect>
+                        </Ellipse>
+                    </Grid>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsChecked" Value="True">
+                            <Setter TargetName="track" Property="Background" Value="{DynamicResource AccentBrush}"/>
+                            <Trigger.EnterActions>
+                                <BeginStoryboard><Storyboard><DoubleAnimation Storyboard.TargetName="tx" Storyboard.TargetProperty="X" To="11" Duration="0:0:0.15"><DoubleAnimation.EasingFunction><CubicEase EasingMode="EaseOut"/></DoubleAnimation.EasingFunction></DoubleAnimation></Storyboard></BeginStoryboard>
+                            </Trigger.EnterActions>
+                            <Trigger.ExitActions>
+                                <BeginStoryboard><Storyboard><DoubleAnimation Storyboard.TargetName="tx" Storyboard.TargetProperty="X" To="0" Duration="0:0:0.15"><DoubleAnimation.EasingFunction><CubicEase EasingMode="EaseOut"/></DoubleAnimation.EasingFunction></DoubleAnimation></Storyboard></BeginStoryboard>
+                            </Trigger.ExitActions>
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Opacity" Value="0.4"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style x:Key="MacCheckBox" TargetType="CheckBox">
+        <Setter Property="OverridesDefaultStyle" Value="True"/>
+        <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+        <Setter Property="FontFamily" Value="{DynamicResource MacFont}"/>
+        <Setter Property="FontSize" Value="13"/>
+        <Setter Property="Foreground" Value="{DynamicResource LabelBrush}"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="CheckBox">
+                    <StackPanel Orientation="Horizontal" Background="Transparent">
+                        <Grid Width="14" Height="14" VerticalAlignment="Center">
+                            <Border x:Name="box" CornerRadius="3.5" Background="{DynamicResource ControlBrush}" BorderBrush="{DynamicResource ControlBottomBorderBrush}" BorderThickness="0.5"/>
+                            <c:SymbolIcon x:Name="mark" Symbol="checkmark" Width="10" Height="10" StrokeWidth="3" Foreground="White" Visibility="Collapsed"/>
+                        </Grid>
+                        <ContentPresenter Margin="6,0,0,0" VerticalAlignment="Center" RecognizesAccessKey="False"/>
+                    </StackPanel>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsChecked" Value="True">
+                            <Setter TargetName="box" Property="Background" Value="{DynamicResource AccentBrush}"/>
+                            <Setter TargetName="box" Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
+                            <Setter TargetName="mark" Property="Visibility" Value="Visible"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style x:Key="MacRadio" TargetType="RadioButton">
+        <Setter Property="OverridesDefaultStyle" Value="True"/>
+        <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+        <Setter Property="FontFamily" Value="{DynamicResource MacFont}"/>
+        <Setter Property="FontSize" Value="13"/>
+        <Setter Property="Foreground" Value="{DynamicResource LabelBrush}"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="RadioButton">
+                    <StackPanel Orientation="Horizontal" Background="Transparent">
+                        <Grid Width="14" Height="14" VerticalAlignment="Center">
+                            <Ellipse x:Name="box" Fill="{DynamicResource ControlBrush}" Stroke="{DynamicResource ControlBottomBorderBrush}" StrokeThickness="0.5"/>
+                            <Ellipse x:Name="dot" Width="6" Height="6" Fill="White" Visibility="Collapsed"/>
+                        </Grid>
+                        <ContentPresenter Margin="6,0,0,0" VerticalAlignment="Center" RecognizesAccessKey="False"/>
+                    </StackPanel>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsChecked" Value="True">
+                            <Setter TargetName="box" Property="Fill" Value="{DynamicResource AccentBrush}"/>
+                            <Setter TargetName="box" Property="Stroke" Value="{DynamicResource AccentBrush}"/>
+                            <Setter TargetName="dot" Property="Visibility" Value="Visible"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- ============================================================ Slider -->
+    <Style x:Key="MacSliderThumb" TargetType="Thumb">
+        <Setter Property="OverridesDefaultStyle" Value="True"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Thumb">
+                    <Ellipse Width="20" Height="20" Fill="White" Stroke="#26000000" StrokeThickness="0.5">
+                        <Ellipse.Effect><DropShadowEffect BlurRadius="4" ShadowDepth="1" Direction="270" Opacity="0.3"/></Ellipse.Effect>
+                    </Ellipse>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style x:Key="MacSlider" TargetType="Slider">
+        <Setter Property="OverridesDefaultStyle" Value="True"/>
+        <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+        <Setter Property="Height" Value="22"/>
+        <Setter Property="IsMoveToPointEnabled" Value="True"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Slider">
+                    <Grid VerticalAlignment="Center" Height="22">
+                        <Border Height="4" CornerRadius="2" Background="{DynamicResource SliderTrackBrush}" Margin="2,0"/>
+                        <Track x:Name="PART_Track">
+                            <Track.DecreaseRepeatButton>
+                                <RepeatButton Command="Slider.DecreaseLarge" Focusable="False">
+                                    <RepeatButton.Template>
+                                        <ControlTemplate TargetType="RepeatButton"><Border Height="4" CornerRadius="2" Background="{DynamicResource AccentBrush}" Margin="2,0,-8,0"/></ControlTemplate>
+                                    </RepeatButton.Template>
+                                </RepeatButton>
+                            </Track.DecreaseRepeatButton>
+                            <Track.IncreaseRepeatButton>
+                                <RepeatButton Command="Slider.IncreaseLarge" Focusable="False">
+                                    <RepeatButton.Template>
+                                        <ControlTemplate TargetType="RepeatButton"><Border Background="Transparent"/></ControlTemplate>
+                                    </RepeatButton.Template>
+                                </RepeatButton>
+                            </Track.IncreaseRepeatButton>
+                            <Track.Thumb><Thumb Style="{StaticResource MacSliderThumb}"/></Track.Thumb>
+                        </Track>
+                    </Grid>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- Control-Center style fat slider -->
+    <Style x:Key="CCSlider" TargetType="Slider">
+        <Setter Property="OverridesDefaultStyle" Value="True"/>
+        <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+        <Setter Property="IsMoveToPointEnabled" Value="True"/>
+        <Setter Property="Height" Value="22"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Slider">
+                    <Grid Height="22">
+                        <Border CornerRadius="11" Background="{DynamicResource SliderTrackBrush}"/>
+                        <Track x:Name="PART_Track">
+                            <Track.DecreaseRepeatButton>
+                                <RepeatButton Command="Slider.DecreaseLarge" Focusable="False">
+                                    <RepeatButton.Template>
+                                        <ControlTemplate TargetType="RepeatButton"><Border CornerRadius="11,0,0,11" Background="White" Margin="0,0,-11,0"/></ControlTemplate>
+                                    </RepeatButton.Template>
+                                </RepeatButton>
+                            </Track.DecreaseRepeatButton>
+                            <Track.IncreaseRepeatButton>
+                                <RepeatButton Command="Slider.IncreaseLarge" Focusable="False">
+                                    <RepeatButton.Template>
+                                        <ControlTemplate TargetType="RepeatButton"><Border Background="Transparent"/></ControlTemplate>
+                                    </RepeatButton.Template>
+                                </RepeatButton>
+                            </Track.IncreaseRepeatButton>
+                            <Track.Thumb>
+                                <Thumb>
+                                    <Thumb.Template>
+                                        <ControlTemplate TargetType="Thumb">
+                                            <Ellipse Width="22" Height="22" Fill="White" Stroke="#1F000000" StrokeThickness="0.5">
+                                                <Ellipse.Effect><DropShadowEffect BlurRadius="4" ShadowDepth="0.5" Direction="270" Opacity="0.3"/></Ellipse.Effect>
+                                            </Ellipse>
+                                        </ControlTemplate>
+                                    </Thumb.Template>
+                                </Thumb>
+                            </Track.Thumb>
+                        </Track>
+                    </Grid>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- ============================================================ ListBox -->
+    <Style x:Key="MacListItem" TargetType="ListBoxItem">
+        <Setter Property="OverridesDefaultStyle" Value="True"/>
+        <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+        <Setter Property="Foreground" Value="{DynamicResource LabelBrush}"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ListBoxItem">
+                    <Border x:Name="bd" CornerRadius="5" Padding="6,2" Margin="6,0" Background="Transparent">
+                        <ContentPresenter/>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsSelected" Value="True">
+                            <Setter TargetName="bd" Property="Background" Value="{DynamicResource SelectionBrush}"/>
+                            <Setter Property="Foreground" Value="White"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style TargetType="ListBox">
+        <Setter Property="OverridesDefaultStyle" Value="True"/>
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="BorderThickness" Value="0"/>
+        <Setter Property="ItemContainerStyle" Value="{StaticResource MacListItem}"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ListBox">
+                    <ScrollViewer Background="{TemplateBinding Background}" Focusable="False" CanContentScroll="{TemplateBinding ScrollViewer.CanContentScroll}">
+                        <ItemsPresenter/>
+                    </ScrollViewer>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style TargetType="TextBlock" x:Key="SectionHeader">
+        <Setter Property="FontSize" Value="11"/>
+        <Setter Property="FontWeight" Value="SemiBold"/>
+        <Setter Property="Foreground" Value="{DynamicResource TertiaryLabelBrush}"/>
+    </Style>
+
+</ResourceDictionary>

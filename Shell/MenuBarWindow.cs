@@ -1,0 +1,679 @@
+using System.Net.NetworkInformation;
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
+using System.Windows.Input;
+using System.Windows.Interop;
+using System.Windows.Media;
+using System.Windows.Shapes;
+using System.Windows.Threading;
+using MacShell.Apps;
+using MacShell.Controls;
+using MacShell.Finder;
+using MacShell.Native;
+using MacShell.Services;
+using static MacShell.Native.NativeMethods;
+using Path = System.Windows.Shapes.Path;
+
+namespace MacShell.Shell;
+
+/// <summary>The macOS menu bar: Apple menu, the active app's menus, status items and clock.</summary>
+public class MenuBarWindow : Window
+{
+    readonly Border _bg = new(), _tint = new();
+    readonly Menu _menu = new() { VerticalAlignment = VerticalAlignment.Stretch };
+    readonly StackPanel _right = new() { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 0, 8, 0) };
+    readonly TextBlock _clock = new() { VerticalAlignment = VerticalAlignment.Center };
+    readonly SolidColorBrush _text = new(Colors.Black);
+    readonly SolidColorBrush _highlight = new(Color.FromArgb(0x26, 0, 0, 0));
+    StatusButton _ccButton, _clockButton, _wifiButton, _batteryButton;
+    BatteryIcon _battery;
+    TextBlock _batteryPct;
+    SymbolIcon _wifiIcon, _soundIcon;
+    int _soundTick;
+    IntPtr _hwnd;
+    bool _dark;
+    public IntPtr Handle => _hwnd;
+
+    public MenuBarWindow()
+    {
+        WindowStyle = WindowStyle.None;
+        ResizeMode = ResizeMode.NoResize;
+        ShowInTaskbar = false;
+        Topmost = true;
+        ShowActivated = false;
+        FontFamily = Theme.Font;
+        FontSize = 13;
+        UseLayoutRounding = true;
+        TextOptions.SetTextFormattingMode(this, TextFormattingMode.Ideal);
+        TextOptions.SetTextRenderingMode(this, TextRenderingMode.Grayscale);
+        Title = "Menu Bar";
+        Resources["MenuBarHighlightBrush"] = _highlight;
+        Foreground = _text;
+
+        var root = new Grid();
+        root.Children.Add(_bg);
+        root.Children.Add(_tint);
+        var dock = new DockPanel { LastChildFill = true };
+        DockPanel.SetDock(_right, Dock.Right);
+        dock.Children.Add(_right);
+        _menu.Margin = new Thickness(6, 0, 0, 0);
+        dock.Children.Add(_menu);
+        root.Children.Add(dock);
+        Content = root;
+
+        _menu.AddHandler(MenuItem.SubmenuOpenedEvent, new RoutedEventHandler((_, e) =>
+        {
+            if (e.OriginalSource is MenuItem mi && mi.Parent == _menu)
+                MenuDismisser.Opened("menubar", () => { foreach (MenuItem m in _menu.Items) m.IsSubmenuOpen = false; });
+        }));
+        _menu.AddHandler(MenuItem.SubmenuClosedEvent, new RoutedEventHandler((_, e) =>
+        {
+            if (e.OriginalSource is MenuItem mi && mi.Parent == _menu && !_menu.Items.OfType<MenuItem>().Any(m => m.IsSubmenuOpen))
+                MenuDismisser.Closed("menubar");
+        }));
+
+        BuildStatusItems();
+        Reposition();
+        ApplyAppearance();
+        RebuildMenus();
+
+        Wallpaper.Changed += ApplyAppearance;
+        Theme.Changed += () => { ApplyAppearance(); RebuildMenus(); };
+        WindowTracker.ActiveAppChanged += RebuildMenus;
+        Settings.Changed += UpdateClock;
+
+        var timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
+        timer.Tick += (_, _) => { UpdateClock(); if (++_soundTick % 2 == 0) UpdateSoundIcon(); };
+        timer.Start();
+        var slow = new DispatcherTimer { Interval = TimeSpan.FromSeconds(10) };
+        slow.Tick += (_, _) => UpdateStatus();
+        slow.Start();
+        NetworkChange.NetworkAvailabilityChanged += (_, _) => Dispatcher.BeginInvoke(UpdateStatus);
+        NetworkChange.NetworkAddressChanged += (_, _) => Dispatcher.BeginInvoke(UpdateStatus);
+        UpdateClock();
+        UpdateStatus();
+
+        SourceInitialized += (_, _) =>
+        {
+            _hwnd = new WindowInteropHelper(this).Handle;
+            AddExStyle(_hwnd, WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE);
+            WindowTracker.RegisterChrome(this);
+            HwndSource.FromHwnd(_hwnd).AddHook((IntPtr h, int msg, IntPtr w, IntPtr l, ref bool handled) =>
+            {
+                if (msg == WM_MOUSEACTIVATE) { handled = true; return new IntPtr(MA_NOACTIVATE); }
+                if (Takeover.HandleAppBarMessage(h, msg, w, l)) handled = true;
+                else if ((uint)msg == Takeover.TaskbarCreatedMessage) Dispatcher.BeginInvoke(() => { Takeover.OnExplorerRestarted(); ShellHost.UpdateWorkArea(); });
+                return IntPtr.Zero;
+            });
+        };
+    }
+
+    public void Reposition()
+    {
+        Left = ShellHost.ScreenPx.Left / ShellHost.Scale;
+        Top = ShellHost.ScreenPx.Top / ShellHost.Scale;
+        Width = ShellHost.ScreenDip.Width;
+        Height = ShellHost.MenuBarHeight;
+        ApplyAppearance();
+    }
+
+    public void SetHiddenForFullscreen(bool hidden)
+    {
+        if (hidden) Hide(); else { Show(); Topmost = false; Topmost = true; }
+    }
+
+    void ApplyAppearance()
+    {
+        _dark = Theme.IsDark || Wallpaper.TopIsDark;
+        if (Wallpaper.Blurred != null)
+            _bg.Background = Wallpaper.BlurBrush(new Rect(0, 0, ShellHost.ScreenDip.Width, ShellHost.MenuBarHeight), ShellHost.ScreenDip);
+        _tint.Background = new SolidColorBrush(_dark ? Color.FromArgb(0x3A, 0x10, 0x10, 0x12) : Color.FromArgb(0x55, 0xFF, 0xFF, 0xFF));
+        _text.Color = _dark ? Color.FromArgb(0xF2, 0xFF, 0xFF, 0xFF) : Color.FromArgb(0xE6, 0, 0, 0);
+        _highlight.Color = _dark ? Color.FromArgb(0x38, 0xFF, 0xFF, 0xFF) : Color.FromArgb(0x24, 0, 0, 0);
+    }
+
+    // ------------------------------------------------------------------ status items
+
+    void BuildStatusItems()
+    {
+        _right.Children.Clear();
+
+        _battery = new BatteryIcon { Foreground = _text, VerticalAlignment = VerticalAlignment.Center };
+        _batteryPct = new TextBlock { Foreground = _text, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 5, 0), FontSize = 12 };
+        var bp = new StackPanel { Orientation = Orientation.Horizontal };
+        bp.Children.Add(_batteryPct); bp.Children.Add(_battery);
+        _batteryButton = new StatusButton(bp, b => ControlCenterWindow.ShowBattery(b));
+        _right.Children.Add(_batteryButton);
+
+        _wifiIcon = new SymbolIcon { Symbol = "wifi", Width = 17, Height = 17, StrokeWidth = 2.0, Foreground = _text };
+        _wifiButton = new StatusButton(_wifiIcon, _ => OpenUri("ms-availablenetworks:"));
+        _right.Children.Add(_wifiButton);
+
+        _soundIcon = new SymbolIcon { Symbol = "speaker", Width = 17, Height = 17, StrokeWidth = 1.9, Foreground = _text };
+        _right.Children.Add(new StatusButton(_soundIcon, b => SoundPopover.Toggle(b)));
+        UpdateSoundIcon();
+
+        var search = new SymbolIcon { Symbol = "magnifyingglass", Width = 15, Height = 15, StrokeWidth = 2.1, Foreground = _text };
+        _right.Children.Add(new StatusButton(search, _ => SpotlightWindow.Toggle()));
+
+        var cc = new SymbolIcon { Symbol = "controlcenter", Width = 16, Height = 16, StrokeWidth = 1.8, Foreground = _text };
+        _ccButton = new StatusButton(cc, b => ControlCenterWindow.Toggle(b));
+        _right.Children.Add(_ccButton);
+
+        _clock.Foreground = _text;
+        _clockButton = new StatusButton(_clock, b => NotificationCenterWindow.Toggle(b)) { Padding = new Thickness(8, 0, 6, 0) };
+        _right.Children.Add(_clockButton);
+    }
+
+    static void OpenUri(string uri)
+    {
+        try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(uri) { UseShellExecute = true }); } catch { }
+    }
+
+    void UpdateClock()
+    {
+        var s = Settings.Current;
+        var now = DateTime.Now;
+        string time = s.Clock24Hour ? now.ToString(s.ClockShowSeconds ? "H:mm:ss" : "H:mm") : now.ToString(s.ClockShowSeconds ? "h:mm:ss tt" : "h:mm tt");
+        var parts = new List<string>();
+        if (s.ClockShowDay) parts.Add(now.ToString("ddd"));
+        if (s.ClockShowDate) parts.Add(now.ToString("MMM d"));
+        string date = string.Join(" ", parts);
+        _clock.Text = date.Length > 0 ? date + "  " + time : time;
+    }
+
+    /// <summary>Speaker glyph reflects mute and volume level, like the macOS Sound menu extra.</summary>
+    public void UpdateSoundIcon()
+    {
+        if (_soundIcon == null) return;
+        double v = AudioVolume.Get() ?? 0.5;
+        _soundIcon.Symbol = AudioVolume.IsMuted() ? "speaker.slash" : v < 0.01 ? "speaker.0" : v < 0.34 ? "speaker.1" : "speaker";
+    }
+
+    void UpdateStatus()
+    {
+        GetSystemPowerStatus(out var ps);
+        bool hasBattery = ps.BatteryFlag != 128 && ps.BatteryFlag != 255 && ps.BatteryLifePercent <= 100;
+        _batteryButton.Visibility = hasBattery ? Visibility.Visible : Visibility.Collapsed;
+        if (hasBattery)
+        {
+            _battery.Level = ps.BatteryLifePercent / 100.0;
+            _battery.Charging = ps.ACLineStatus == 1;
+            _batteryPct.Text = Settings.Current.ShowBatteryPercent ? ps.BatteryLifePercent + "%" : "";
+            _batteryPct.Visibility = Settings.Current.ShowBatteryPercent ? Visibility.Visible : Visibility.Collapsed;
+        }
+        bool wifi = false, anyUp = false;
+        try
+        {
+            foreach (var ni in NetworkInterface.GetAllNetworkInterfaces())
+            {
+                if (ni.OperationalStatus != OperationalStatus.Up) continue;
+                if (ni.NetworkInterfaceType == NetworkInterfaceType.Loopback || ni.NetworkInterfaceType == NetworkInterfaceType.Tunnel) continue;
+                anyUp = true;
+                if (ni.NetworkInterfaceType == NetworkInterfaceType.Wireless80211) wifi = true;
+            }
+        }
+        catch { }
+        _wifiIcon.Symbol = wifi || !anyUp ? "wifi" : "network";
+        _wifiIcon.Opacity = anyUp ? 1 : 0.35;
+    }
+
+    // ------------------------------------------------------------------ menus
+
+    public void OpenMenu(int index)
+    {
+        foreach (MenuItem other in _menu.Items) other.IsSubmenuOpen = false;
+        if (index >= 0 && index < _menu.Items.Count && _menu.Items[index] is MenuItem mi) mi.IsSubmenuOpen = true;
+    }
+
+    public void RebuildMenus()
+    {
+        foreach (MenuItem mi in _menu.Items) mi.IsSubmenuOpen = false;
+        _menu.Items.Clear();
+        _menu.Items.Add(AppleMenu());
+        var app = WindowTracker.ActiveApp;
+        if (app == null || app.Key == WindowTracker.FinderKey) AddFinderMenus();
+        else if (app.Key == "internal:settings") AddSettingsMenus();
+        else AddAppMenus(app);
+    }
+
+    MenuItem TopMenu(object header, bool bold = false, params object[] items)
+    {
+        object h = header is string s ? new TextBlock { Text = s, FontWeight = bold ? FontWeights.Bold : FontWeights.Normal, Foreground = _text, VerticalAlignment = VerticalAlignment.Center } : header;
+        var mi = new MenuItem { Header = h, Foreground = _text };
+        foreach (var i in items) Mb.Add(mi.Items, i);
+        return mi;
+    }
+
+    MenuItem AppleMenu()
+    {
+        var logo = new Path { Data = MacIcons.AppleLogo, Fill = _text, Stretch = Stretch.Uniform, Height = 15, Width = 13, VerticalAlignment = VerticalAlignment.Center, SnapsToDevicePixels = false };
+        var mi = TopMenu(logo, false,
+            Mb.Item("About This Mac", AboutWindow.ShowWindow),
+            Mb.Sep(),
+            Mb.Item("System Settings…", () => SettingsWindow.ShowPane(null)),
+            Mb.Item("App Store…", () => AppCatalog.Launch("Microsoft.WindowsStore_8wekyb3d8bbwe!App")),
+            Mb.Sep(),
+            Mb.LazySub("Recent Items", RecentItems),
+            Mb.Sep(),
+            Mb.Item("Force Quit…", ForceQuitWindow.ShowWindow, "⌥⌘⎋"),
+            Mb.Sep(),
+            Mb.Item("Sleep", ShellHost.Sleep),
+            Mb.Item("Restart…", ShellHost.ConfirmRestart),
+            Mb.Item("Shut Down…", ShellHost.ConfirmShutDown),
+            Mb.Sep(),
+            Mb.Item("Lock Screen", ShellHost.Lock, "⌃⌘Q"),
+            Mb.Item($"Log Out {UserDisplayName()}…", ShellHost.ConfirmLogOut, "⇧⌘Q"),
+            Mb.Sep(),
+            Mb.Item("Return to Windows…", ShellHost.ConfirmExitToWindows, "⌃⌥⇧Q"));
+        mi.Padding = new Thickness(11, 0, 11, 0);
+        return mi;
+    }
+
+    public static string UserDisplayName()
+    {
+        try
+        {
+            using var k = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Explorer");
+            var n = k?.GetValue("Logon User Name") as string;
+            if (!string.IsNullOrWhiteSpace(n)) return n.Contains('\\') ? n[(n.LastIndexOf('\\') + 1)..] : n;
+        }
+        catch { }
+        return Environment.UserName;
+    }
+
+    IEnumerable<object> RecentItems()
+    {
+        yield return Mb.SectionHeader("Applications");
+        foreach (var t in Settings.Current.RecentApps.Take(10))
+        {
+            var e = AppCatalog.FindByParsingName(t);
+            string name = e?.Name ?? (File.Exists(t) ? WindowTracker.FriendlyExeName(t) : t);
+            string target = t;
+            yield return Mb.Item(name, () => AppCatalog.Launch(target));
+        }
+        yield return Mb.Sep();
+        yield return Mb.SectionHeader("Documents");
+        foreach (var d in Settings.Current.RecentDocs.Where(File.Exists).Take(10))
+        {
+            string path = d;
+            yield return Mb.Item(System.IO.Path.GetFileName(d), () => AppCatalog.OpenFile(path));
+        }
+        yield return Mb.Sep();
+        yield return Mb.Item("Clear Menu", () => { Settings.Current.RecentApps.Clear(); Settings.Current.RecentDocs.Clear(); Settings.Save(); });
+    }
+
+    static void F(string cmd) => FinderCommands.Run(cmd);
+
+    void AddFinderMenus()
+    {
+        var s = Settings.Current;
+        _menu.Items.Add(TopMenu("Finder", true,
+            Mb.Item("About Finder", AboutWindow.ShowWindow),
+            Mb.Sep(),
+            Mb.Item("Settings…", () => SettingsWindow.ShowPane("finder"), "⌘,"),
+            Mb.Sep(),
+            Mb.Item("Empty Trash…", () => F("emptyTrash"), "⇧⌘⌫"),
+            Mb.Sep(),
+            Mb.Item("Hide Finder", () => F("hide"), "⌘H"),
+            Mb.Item("Hide Others", HideOthers, "⌥⌘H"),
+            Mb.Item("Show All", ShowAll)));
+        _menu.Items.Add(TopMenu("File", false,
+            Mb.Item("New Finder Window", () => F("newWindow"), "⌘N"),
+            Mb.Item("New Folder", () => F("newFolder"), "⇧⌘N"),
+            Mb.Item("New Tab", () => F("newTab"), "⌘T"),
+            Mb.Item("Open", () => F("open"), "⌘O"),
+            Mb.Item("Close Window", () => F("close"), "⌘W"),
+            Mb.Sep(),
+            Mb.Item("Get Info", () => F("getInfo"), "⌘I"),
+            Mb.Item("Rename", () => F("rename")),
+            Mb.Item("Compress", () => F("compress")),
+            Mb.Item("Duplicate", () => F("duplicate"), "⌘D"),
+            Mb.Item("Make Alias", () => F("alias"), "⌃⌘A"),
+            Mb.Item("Quick Look", () => F("quicklook"), "⌘Y"),
+            Mb.Item("Show Original", () => F("showOriginal"), "⌘R"),
+            Mb.Sep(),
+            Mb.Item("Move to Trash", () => F("trash"), "⌘⌫"),
+            Mb.Sep(),
+            Mb.Item("Find", () => F("find"), "⌘F")));
+        _menu.Items.Add(TopMenu("Edit", false,
+            Mb.Item("Undo", null, "⌘Z", false),
+            Mb.Item("Redo", null, "⇧⌘Z", false),
+            Mb.Sep(),
+            Mb.Item("Cut", () => F("cut"), "⌘X"),
+            Mb.Item("Copy", () => F("copy"), "⌘C"),
+            Mb.Item("Paste Item", () => F("paste"), "⌘V"),
+            Mb.Item("Select All", () => F("selectAll"), "⌘A"),
+            Mb.Sep(),
+            Mb.Item("Copy as Pathname", () => F("copyPath"), "⌥⌘C"),
+            Mb.Sep(),
+            Mb.Item("Show Hidden Files", () => F("showHidden"), "⇧⌘.", isChecked: s.ShowHiddenFiles)));
+        var active = FinderWindow.Active;
+        string view = active?.ViewMode ?? "icons";
+        _menu.Items.Add(TopMenu("View", false,
+            Mb.Item("as Icons", () => F("view:icons"), "⌘1", isChecked: view == "icons"),
+            Mb.Item("as List", () => F("view:list"), "⌘2", isChecked: view == "list"),
+            Mb.Item("as Columns", () => F("view:columns"), "⌘3", isChecked: view == "columns"),
+            Mb.Item("as Gallery", () => F("view:gallery"), "⌘4", isChecked: view == "gallery"),
+            Mb.Sep(),
+            Mb.Sub("Sort By",
+                Mb.Item("Name", () => F("sort:name")),
+                Mb.Item("Kind", () => F("sort:kind")),
+                Mb.Item("Date Modified", () => F("sort:date")),
+                Mb.Item("Size", () => F("sort:size"))),
+            Mb.Sep(),
+            Mb.Item(s.FinderShowSidebar ? "Hide Sidebar" : "Show Sidebar", () => F("toggleSidebar"), "⌃⌘S"),
+            Mb.Item(s.FinderShowPathBar ? "Hide Path Bar" : "Show Path Bar", () => F("togglePathBar"), "⌥⌘P"),
+            Mb.Item(s.FinderShowStatusBar ? "Hide Status Bar" : "Show Status Bar", () => F("toggleStatusBar"), "⌘/"),
+            Mb.Sep(),
+            Mb.Item("Enter Full Screen", () => F("zoom"), "⌃⌘F")));
+        _menu.Items.Add(TopMenu("Go", false,
+            Mb.Item("Back", () => F("back"), "⌘["),
+            Mb.Item("Forward", () => F("forward"), "⌘]"),
+            Mb.Item("Enclosing Folder", () => F("up"), "⌘↑"),
+            Mb.Sep(),
+            Mb.Item("Recents", () => F("go:recents"), "⇧⌘F"),
+            Mb.Item("Documents", () => F("go:documents"), "⇧⌘O"),
+            Mb.Item("Desktop", () => F("go:desktop"), "⇧⌘D"),
+            Mb.Item("Downloads", () => F("go:downloads"), "⌥⌘L"),
+            Mb.Item("Home", () => F("go:home"), "⇧⌘H"),
+            Mb.Item("Computer", () => F("go:computer"), "⇧⌘C"),
+            Mb.Item("iCloud Drive", () => F("go:icloud"), "⇧⌘I", Environment.GetEnvironmentVariable("OneDrive") != null),
+            Mb.Item("Applications", () => F("go:applications"), "⇧⌘A"),
+            Mb.Item("Utilities", () => F("go:utilities"), "⇧⌘U"),
+            Mb.Sep(),
+            Mb.Item("Go to Folder…", () => F("goto"), "⇧⌘G")));
+        _menu.Items.Add(WindowMenu(WindowTracker.FindByKey(WindowTracker.FinderKey)));
+        _menu.Items.Add(HelpMenu("macOS"));
+    }
+
+    void AddSettingsMenus()
+    {
+        _menu.Items.Add(TopMenu("System Settings", true,
+            Mb.Item("About System Settings", AboutWindow.ShowWindow),
+            Mb.Sep(),
+            Mb.Item("Hide System Settings", () => SettingsWindow.Instance?.Hide(), "⌘H"),
+            Mb.Sep(),
+            Mb.Item("Quit System Settings", () => SettingsWindow.Instance?.Close(), "⌘Q")));
+        _menu.Items.Add(TopMenu("Edit", false, Mb.Item("Undo", null, "⌘Z", false), Mb.Sep(), Mb.Item("Cut", null, "⌘X"), Mb.Item("Copy", null, "⌘C"), Mb.Item("Paste", null, "⌘V")));
+        _menu.Items.Add(TopMenu("View", false,
+            Mb.Item("Back", () => SettingsWindow.Instance?.GoBack(), "⌘["),
+            Mb.Sep(),
+            Mb.Item("Appearance", () => SettingsWindow.ShowPane("appearance")),
+            Mb.Item("Desktop & Dock", () => SettingsWindow.ShowPane("dock")),
+            Mb.Item("Wallpaper", () => SettingsWindow.ShowPane("wallpaper"))));
+        _menu.Items.Add(WindowMenu(WindowTracker.FindByKey("internal:settings")));
+        _menu.Items.Add(HelpMenu("System Settings"));
+    }
+
+    void AddAppMenus(RunningApp app)
+    {
+        string name = app.Name ?? "App";
+        _menu.Items.Add(TopMenu(name, true,
+            Mb.Item($"About {name}", () => AboutApp(app)),
+            Mb.Sep(),
+            Mb.Item("Settings…", () => ShellHost.SendToApp(0x11, 0xBC), "⌘,"),
+            Mb.Sep(),
+            Mb.Item($"Hide {name}", () => WindowTracker.HideApp(app), "⌘H"),
+            Mb.Item("Hide Others", HideOthers, "⌥⌘H"),
+            Mb.Item("Show All", ShowAll),
+            Mb.Sep(),
+            Mb.Item($"Quit {name}", () => WindowTracker.QuitApp(app), "⌘Q")));
+
+        // Classic Win32 apps: mirror their real menu bar (global menu, just like a Mac).
+        var hwnd = WindowTracker.LastExternalForeground;
+        IntPtr hmenu = hwnd != IntPtr.Zero ? GetMenu(hwnd) : IntPtr.Zero;
+        var native = hmenu != IntPtr.Zero ? NativeMenu.Read(hmenu, hwnd) : new List<NativeMenuItem>();
+        if (native.Count > 0)
+        {
+            int idx = 0;
+            foreach (var top in native.Where(n => !n.Separator))
+            {
+                int index = idx++;
+                var mi = TopMenu(top.Text);
+                if (top.SubMenu != IntPtr.Zero)
+                {
+                    mi.Items.Add(new MenuItem { Header = "…", IsEnabled = false });
+                    var sub = top.SubMenu;
+                    mi.SubmenuOpened += (_, e) => { if (e.OriginalSource == mi) FillNative(mi, sub, hwnd, index); };
+                }
+                else
+                {
+                    uint id = top.Id;
+                    mi.Click += (_, _) => PostMessage(hwnd, WM_COMMAND, new IntPtr(id), IntPtr.Zero);
+                }
+                _menu.Items.Add(mi);
+            }
+        }
+        else
+        {
+            _menu.Items.Add(TopMenu("File", false,
+                Mb.Item("New Window", () => ShellHost.SendToApp(0x11, 0x4E), "⌘N"),
+                Mb.Item("New Tab", () => ShellHost.SendToApp(0x11, 0x54), "⌘T"),
+                Mb.Item("Open…", () => ShellHost.SendToApp(0x11, 0x4F), "⌘O"),
+                Mb.Sep(),
+                Mb.Item("Close Window", () => PostMessage(WindowTracker.LastExternalForeground, WM_CLOSE, IntPtr.Zero, IntPtr.Zero), "⌘W"),
+                Mb.Item("Save", () => ShellHost.SendToApp(0x11, 0x53), "⌘S"),
+                Mb.Item("Save As…", () => ShellHost.SendToApp(0x11, 0x10, 0x53), "⇧⌘S"),
+                Mb.Sep(),
+                Mb.Item("Print…", () => ShellHost.SendToApp(0x11, 0x50), "⌘P")));
+            _menu.Items.Add(TopMenu("Edit", false,
+                Mb.Item("Undo", () => ShellHost.SendToApp(0x11, 0x5A), "⌘Z"),
+                Mb.Item("Redo", () => ShellHost.SendToApp(0x11, 0x59), "⇧⌘Z"),
+                Mb.Sep(),
+                Mb.Item("Cut", () => ShellHost.SendToApp(0x11, 0x58), "⌘X"),
+                Mb.Item("Copy", () => ShellHost.SendToApp(0x11, 0x43), "⌘C"),
+                Mb.Item("Paste", () => ShellHost.SendToApp(0x11, 0x56), "⌘V"),
+                Mb.Item("Select All", () => ShellHost.SendToApp(0x11, 0x41), "⌘A"),
+                Mb.Sep(),
+                Mb.Item("Find…", () => ShellHost.SendToApp(0x11, 0x46), "⌘F"),
+                Mb.Sep(),
+                Mb.Item("Emoji & Symbols", () => ShellHost.SendToApp(0x5B, 0xBE), "fn E")));
+            _menu.Items.Add(TopMenu("View", false,
+                Mb.Item("Actual Size", () => ShellHost.SendToApp(0x11, 0x30), "⌘0"),
+                Mb.Item("Zoom In", () => ShellHost.SendToApp(0x11, 0xBB), "⌘+"),
+                Mb.Item("Zoom Out", () => ShellHost.SendToApp(0x11, 0xBD), "⌘−"),
+                Mb.Sep(),
+                Mb.Item("Enter Full Screen", () => ShellHost.SendToApp(0x7A), "⌃⌘F")));
+        }
+        _menu.Items.Add(WindowMenu(app));
+        _menu.Items.Add(HelpMenu(name));
+    }
+
+    void FillNative(MenuItem parent, IntPtr hmenu, IntPtr owner, int index)
+    {
+        parent.Items.Clear();
+        foreach (var n in NativeMenu.Read(hmenu, owner, index))
+        {
+            if (n.Separator) { Mb.Add(parent.Items, Mb.Sep()); continue; }
+            var mi = new MenuItem { Header = n.Text, InputGestureText = n.Shortcut ?? "", IsEnabled = n.Enabled, IsChecked = n.Checked };
+            if (n.SubMenu != IntPtr.Zero)
+            {
+                mi.Items.Add(new MenuItem { Header = "…", IsEnabled = false });
+                var sub = n.SubMenu;
+                mi.SubmenuOpened += (_, e) => { if (e.OriginalSource == mi) FillNative(mi, sub, owner, 0); };
+            }
+            else
+            {
+                uint id = n.Id;
+                mi.Click += (_, e) =>
+                {
+                    e.Handled = true;
+                    ActivateWindow(owner);
+                    PostMessage(owner, WM_COMMAND, new IntPtr(id), IntPtr.Zero);
+                };
+            }
+            parent.Items.Add(mi);
+        }
+    }
+
+    MenuItem WindowMenu(RunningApp app)
+    {
+        var mi = TopMenu("Window");
+        mi.Items.Add(new MenuItem { Header = "…" });
+        mi.SubmenuOpened += (_, e) =>
+        {
+            if (e.OriginalSource != mi) return;
+            mi.Items.Clear();
+            var internalApp = app == null || app.IsInternal;
+            Mb.Add(mi.Items, Mb.Item("Minimize", () => WindowAction("min"), "⌘M"));
+            Mb.Add(mi.Items, Mb.Item("Zoom", () => WindowAction("zoom")));
+            Mb.Add(mi.Items, Mb.Item("Fill", () => WindowAction("fill"), "fn⌃F"));
+            Mb.Add(mi.Items, Mb.Item("Center", () => WindowAction("center"), "fn⌃C"));
+            Mb.Add(mi.Items, Mb.Sub("Move & Resize",
+                Mb.SectionHeader("Halves"),
+                Mb.Item("Left", () => WindowAction("left"), "fn⌃←"),
+                Mb.Item("Right", () => WindowAction("right"), "fn⌃→"),
+                Mb.Item("Top", () => WindowAction("top"), "fn⌃↑"),
+                Mb.Item("Bottom", () => WindowAction("bottom"), "fn⌃↓"),
+                Mb.Sep(),
+                Mb.SectionHeader("Quarters"),
+                Mb.Item("Top Left", () => WindowAction("tl")),
+                Mb.Item("Top Right", () => WindowAction("tr")),
+                Mb.Item("Bottom Left", () => WindowAction("bl")),
+                Mb.Item("Bottom Right", () => WindowAction("br"))));
+            Mb.Add(mi.Items, Mb.Sep());
+            Mb.Add(mi.Items, Mb.Item("Bring All to Front", () => { if (app != null) WindowTracker.ActivateApp(app); }));
+            var live = app != null ? WindowTracker.FindByKey(app.Key) ?? app : null;
+            if (live != null && live.Windows.Count > 0)
+            {
+                Mb.Add(mi.Items, Mb.Sep());
+                var fg = GetForegroundWindow();
+                foreach (var w in live.Windows)
+                {
+                    var hw = w.Hwnd;
+                    string title = string.IsNullOrWhiteSpace(w.Title) ? live.Name : w.Title;
+                    if (title.Length > 60) title = title[..57] + "…";
+                    Mb.Add(mi.Items, Mb.Item(title, () => ActivateWindow(hw), isChecked: hw == fg || hw == WindowTracker.LastForeground));
+                }
+            }
+        };
+        return mi;
+    }
+
+    MenuItem HelpMenu(string name) => TopMenu("Help", false,
+        Mb.Item($"{name} Help", () => ShellHost.SendToApp(0x70)),
+        Mb.Sep(),
+        Mb.Item("MacShell Keyboard Shortcuts", () => SettingsWindow.ShowPane("keyboard")));
+
+    /// <summary>Window-management for the frontmost window (external app or our own).</summary>
+    public static void WindowAction(string action)
+    {
+        IntPtr h = WindowTracker.ActiveApp?.IsInternal == true ? WindowTracker.LastForeground : WindowTracker.LastExternalForeground;
+        if (h == IntPtr.Zero || !IsWindow(h)) return;
+        RECT wa = default;
+        SystemParametersInfo(SPI_GETWORKAREA, 0, ref wa, 0);
+        void Place(int x, int y, int w, int hh)
+        {
+            if (IsZoomed(h) || IsIconic(h)) ShowWindow(h, SW_RESTORE);
+            // compensate for invisible resize borders so the visible frame lands exactly
+            GetWindowRect(h, out RECT outer);
+            var vis = GetVisibleBounds(h);
+            int l = vis.Left - outer.Left, t = vis.Top - outer.Top, r = outer.Right - vis.Right, b = outer.Bottom - vis.Bottom;
+            SetWindowPos(h, IntPtr.Zero, x - l, y - t, w + l + r, hh + t + b, SWP_NOZORDER | SWP_NOACTIVATE);
+        }
+        int W = wa.Width, H = wa.Height, X = wa.Left, Y = wa.Top;
+        switch (action)
+        {
+            case "min": ShowWindow(h, SW_MINIMIZE); break;
+            case "zoom": ShowWindow(h, IsZoomed(h) ? SW_RESTORE : SW_MAXIMIZE); break;
+            case "fill": Place(X, Y, W, H); break;
+            case "center":
+                {
+                    var v = GetVisibleBounds(h);
+                    Place(X + (W - v.Width) / 2, Y + (H - v.Height) / 2, v.Width, v.Height);
+                    break;
+                }
+            case "left": Place(X, Y, W / 2, H); break;
+            case "right": Place(X + W / 2, Y, W - W / 2, H); break;
+            case "top": Place(X, Y, W, H / 2); break;
+            case "bottom": Place(X, Y + H / 2, W, H - H / 2); break;
+            case "tl": Place(X, Y, W / 2, H / 2); break;
+            case "tr": Place(X + W / 2, Y, W - W / 2, H / 2); break;
+            case "bl": Place(X, Y + H / 2, W / 2, H - H / 2); break;
+            case "br": Place(X + W / 2, Y + H / 2, W - W / 2, H - H / 2); break;
+        }
+    }
+
+    static void HideOthers()
+    {
+        var active = WindowTracker.ActiveApp;
+        foreach (var a in WindowTracker.Apps.Values)
+            if (a.Key != active?.Key) WindowTracker.HideApp(a);
+    }
+
+    static void ShowAll()
+    {
+        foreach (var a in WindowTracker.Apps.Values)
+            foreach (var w in a.Windows.Where(w => w.Minimized)) ShowWindow(w.Hwnd, SW_SHOWNOACTIVATE);
+    }
+
+    static void AboutApp(RunningApp app)
+    {
+        string info = "";
+        try
+        {
+            if (!string.IsNullOrEmpty(app.ExePath))
+            {
+                var vi = System.Diagnostics.FileVersionInfo.GetVersionInfo(app.ExePath);
+                info = $"Version {vi.ProductVersion ?? vi.FileVersion}\n{vi.CompanyName}\n{vi.LegalCopyright}".Trim();
+            }
+        }
+        catch { }
+        ShellHost.Alert(app.Name, string.IsNullOrWhiteSpace(info) ? "No version information available." : info, "OK");
+    }
+
+    // ------------------------------------------------------------------ helper controls
+
+    /// <summary>A menu-bar status item: highlights with a rounded pill while its popup is open.</summary>
+    public class StatusButton : Border
+    {
+        public bool Active { get => _active; set { _active = value; Background = value ? (Brush)FindResource("MenuBarHighlightBrush") : Brushes.Transparent; } }
+        bool _active;
+
+        public StatusButton(UIElement content, Action<StatusButton> click)
+        {
+            Child = content;
+            Padding = new Thickness(7, 0, 7, 0);
+            Margin = new Thickness(0, 1, 0, 1);
+            CornerRadius = new CornerRadius(4);
+            Background = Brushes.Transparent;
+            VerticalAlignment = VerticalAlignment.Stretch;
+            MouseLeftButtonDown += (_, e) => { e.Handled = true; click(this); };
+        }
+
+        /// <summary>Screen position (DIPs) of this item's bottom-right corner.</summary>
+        public Point ScreenAnchor()
+        {
+            var p = PointToScreen(new Point(ActualWidth, ActualHeight));
+            return new Point(p.X / ShellHost.Scale, p.Y / ShellHost.Scale);
+        }
+    }
+
+    public class BatteryIcon : FrameworkElement
+    {
+        public static readonly DependencyProperty ForegroundProperty = System.Windows.Documents.TextElement.ForegroundProperty.AddOwner(typeof(BatteryIcon),
+            new FrameworkPropertyMetadata(Brushes.Black, FrameworkPropertyMetadataOptions.AffectsRender | FrameworkPropertyMetadataOptions.Inherits));
+        public Brush Foreground { get => (Brush)GetValue(ForegroundProperty); set => SetValue(ForegroundProperty, value); }
+        double _level = 1; bool _charging;
+        public double Level { get => _level; set { _level = value; InvalidateVisual(); } }
+        public bool Charging { get => _charging; set { _charging = value; InvalidateVisual(); } }
+        public BatteryIcon() { Width = 25; Height = 12; }
+
+        protected override void OnRender(DrawingContext dc)
+        {
+            var fg = Foreground;
+            var dim = fg.Clone(); dim.Opacity = 0.4;
+            dc.DrawRoundedRectangle(null, new Pen(dim, 1), new Rect(0.5, 0.5, 21.5, 11), 3.2, 3.2);
+            dc.DrawRoundedRectangle(dim, null, new Rect(23, 4, 1.6, 4), 0.8, 0.8);
+            var fill = _level <= 0.2 && !_charging ? new SolidColorBrush(Color.FromRgb(0xFF, 0x3B, 0x30)) : _charging ? new SolidColorBrush(Color.FromRgb(0x34, 0xC7, 0x59)) : fg;
+            dc.DrawRoundedRectangle(fill, null, new Rect(2, 2, Math.Max(1.5, 18.5 * _level), 8), 1.8, 1.8);
+            if (_charging)
+            {
+                var bolt = Geometry.Parse("M12.5,1.6 L7.5,7 L10.6,7 L9.5,10.8 L14.5,5.2 L11.4,5.2 Z");
+                dc.DrawGeometry(Brushes.White, new Pen(Brushes.Black, 0.3), bolt);
+            }
+        }
+    }
+}
