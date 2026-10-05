@@ -312,6 +312,9 @@ public class DockWindow : Window
                 Mb.Add(cm.Items, Mb.Item("Open", LaunchpadWindow.Toggle));
                 break;
             case "finder":
+                Mb.Add(cm.Items, Mb.Item("Run…", () => StartShell("explorer.exe", "shell:::{2559a1f3-21d7-11d4-bdaf-00c04f60b9f0}")));
+                Mb.Add(cm.Items, Mb.Item("Windows Settings", () => StartShell("ms-settings:", null)));
+                Mb.Add(cm.Items, Mb.Sep());
                 AddWindowList(cm, running);
                 Mb.Add(cm.Items, Mb.Item("New Finder Window", () => ShellHost.OpenFinder(null)));
                 Mb.Add(cm.Items, Mb.Item("Find…", () => ShellHost.OpenFinder(null).FocusSearch()));
@@ -337,6 +340,11 @@ public class DockWindow : Window
                 break;
         }
         OpenMenuAbove(cm, iconRect);
+    }
+
+    static void StartShell(string file, string args)
+    {
+        try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(file, args ?? "") { UseShellExecute = true }); } catch { }
     }
 
     void AddWindowList(ContextMenu cm, RunningApp running)
