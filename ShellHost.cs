@@ -37,6 +37,7 @@ public static class ShellHost
         TakeoverEnabled = !noTakeover;
         Settings.Load();
         LoginItem.Initialize();
+        Controls.MenuFit.Install();
         Theme.Apply();
         ComputeMetrics();
         Wallpaper.Load();
@@ -215,6 +216,29 @@ public static class ShellHost
                     string.Join("\n", OpenWith.AppsFor(arg, false).Select(a => $"{(a.Recommended ? "*" : " ")} {a.Name} [{a.Key}] icon={a.IconSource}")));
                 break;
             case "chooser": Finder.AppChooserWindow.Choose(arg, false); break;
+            case "menutest":   // diagnostics: menutest:x,y (DIPs) opens a long menu there and logs where it really landed
+                {
+                    var xy = (arg ?? "0,0").Split(',').Select(double.Parse).ToArray();
+                    var items = Enumerable.Range(1, 18).Select(i => (object)Controls.Mb.Item($"Menu item number {i}")).ToArray();
+                    var cm = Controls.Mb.Context(items);
+                    cm.Placement = System.Windows.Controls.Primitives.PlacementMode.Absolute;
+                    cm.HorizontalOffset = xy[0];
+                    cm.VerticalOffset = xy[1];
+                    cm.Opened += (_, _) =>
+                    {
+                        var t = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(400) };   // (after MenuFit has moved it)
+                        t.Tick += (_, _) =>
+                        {
+                            t.Stop();
+                            var r = Controls.MenuFit.VisibleRect(cm);
+                            File.AppendAllText(Path.Combine(Settings.DataDirectory, "menutest.txt"), $"asked {xy[0]},{xy[1]} -> visible px {r.Left:0},{r.Top:0} - {r.Right:0},{r.Bottom:0}\n");
+                            cm.IsOpen = false;
+                        };
+                        t.Start();
+                    };
+                    cm.IsOpen = true;
+                    break;
+                }
             case "closetitle": foreach (var w in Application.Current.Windows.OfType<Window>().Where(x => x.Title == arg).ToList()) w.Close(); break;
             case "closechooser": foreach (var w in Application.Current.Windows.OfType<Finder.AppChooserWindow>().ToList()) w.Close(); break;
             case "preview": if (string.IsNullOrEmpty(arg)) Apps.Preview.PreviewWindow.OpenApp(); else Apps.Preview.PreviewWindow.Open(arg); break;
