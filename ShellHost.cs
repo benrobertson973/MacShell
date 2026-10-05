@@ -208,7 +208,7 @@ public static class ShellHost
             case "delay": { var t = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3) }; t.Tick += (_, _) => { t.Stop(); RunCommand(arg); }; t.Start(); break; }
             case "checkupdate": _ = Updater.CheckAsync(userInitiated: true); break;
             case "updaterestart": if (Updater.Staged != null) Updater.Restart(); break;
-            case "dumpversion": File.WriteAllText(Path.Combine(Settings.DataDirectory, "version.txt"), $"{Updater.VersionText} release={Updater.IsReleaseBuild} exe={Environment.ProcessPath}"); break;
+            case "dumpversion": File.WriteAllText(Path.Combine(Settings.DataDirectory, "version.txt"), $"{Updater.VersionText} exe={Environment.ProcessPath}"); break;
             case "tray": if (arg == "on") TrayHost.Start(MenuBar.TrayIconRect); else TrayHost.Stop(); break;
             case "trayclick":   // diagnostics: trayclick:<pid>[:right]
                 {

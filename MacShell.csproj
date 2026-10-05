@@ -11,15 +11,11 @@
     <AssemblyName>MacShell</AssemblyName>
     <RootNamespace>MacShell</RootNamespace>
     <Product>MacShell</Product>
-    <Version>1.0.0</Version>
+    <!-- = the latest release tag; bump it with every release so local builds are never older than GitHub -->
+    <Version>1.1.0</Version>
     <NoWarn>CA1416;CS8632;CS0649;CS0169;CS0414</NoWarn>
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
-    <!-- "release" only for builds made by the GitHub release workflow; those update themselves -->
-    <UpdateChannel Condition="'$(UpdateChannel)' == ''">dev</UpdateChannel>
   </PropertyGroup>
 
-  <ItemGroup>
-    <AssemblyMetadata Include="UpdateChannel" Value="$(UpdateChannel)" />
-  </ItemGroup>
 
 </Project>

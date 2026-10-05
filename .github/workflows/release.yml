@@ -24,7 +24,7 @@ jobs:
         run: |
           $version = '${{ github.ref_name }}'.TrimStart('v')
           dotnet publish MacShell.csproj -c Release -r win-x64 --self-contained false `
-            -p:PublishSingleFile=true -p:Version=$version -p:UpdateChannel=release -o out
+            -p:PublishSingleFile=true -p:Version=$version -o out
 
       - name: Publish the release
         shell: pwsh

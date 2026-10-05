@@ -7,10 +7,9 @@ using System.Windows.Threading;
 namespace MacShell.Services;
 
 /// <summary>
-/// Software Update from GitHub releases (github.com/benrobertson973/MacShell). Release builds — made by the
-/// GitHub Actions workflow when a version tag is pushed — check a few minutes after start and then every few
-/// hours, download a newer MacShell.exe next to the running one, swap it in (a running exe can be renamed,
-/// not overwritten) and offer to restart. Development builds made on this PC never update themselves.
+/// Software Update from GitHub releases (github.com/benrobertson973/MacShell): checks a few minutes after start
+/// and then every few hours, downloads a newer MacShell.exe next to the running one, swaps it in (a running exe
+/// can be renamed, not overwritten) and offers to restart.
 /// </summary>
 public static class Updater
 {
@@ -20,9 +19,6 @@ public static class Updater
     public static Version CurrentVersion => Assembly.GetExecutingAssembly().GetName().Version ?? new Version(0, 0);
     public static string VersionText => $"{CurrentVersion.Major}.{CurrentVersion.Minor}.{CurrentVersion.Build}";
 
-    /// <summary>"release" for builds made by GitHub Actions, "dev" for builds made locally.</summary>
-    public static bool IsReleaseBuild => Assembly.GetExecutingAssembly().GetCustomAttributes<AssemblyMetadataAttribute>()
-        .Any(a => a.Key == "UpdateChannel" && a.Value == "release");
 
     /// <summary>Version that has been downloaded and swapped in, waiting for a restart.</summary>
     public static string Staged { get; private set; }
@@ -43,7 +39,7 @@ public static class Updater
     public static void Start()
     {
         CleanUpOld();
-        if (!IsReleaseBuild) { SetStatus("Development build — updates are installed by hand."); return; }
+
         _timer = new DispatcherTimer { Interval = TimeSpan.FromMinutes(3) };
         _timer.Tick += (_, _) => { _timer.Interval = TimeSpan.FromHours(4); _ = CheckAsync(userInitiated: false); };
         _timer.Start();
@@ -74,12 +70,6 @@ public static class Updater
             {
                 SetStatus($"MacShell {VersionText} is up to date.");
                 if (userInitiated) ShellHost.ShowAlert("MacShell is up to date", $"Version {VersionText} is the newest version.");
-                return;
-            }
-            if (!IsReleaseBuild)
-            {
-                SetStatus($"Version {tag.TrimStart('v')} is on GitHub (this is a development build).");
-                if (userInitiated) ShellHost.ShowAlert("Development build", $"Version {tag.TrimStart('v')} is available on GitHub, but development builds aren’t updated automatically.");
                 return;
             }
             string url = null; long size = 0;
