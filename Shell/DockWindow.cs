@@ -235,6 +235,7 @@ public class DockWindow : Window
     {
         var item = new DockItem { Kind = target == "internal:settings" ? "settings" : "app", Target = target, ExePath = exe, Name = name };
         if (target == "internal:settings") { item.Icon = MacIcons.SystemSettings; item.IconIsVector = true; item.Name = "System Settings"; return item; }
+        if (target == Apps.Preview.PreviewWindow.AppId) { item.Icon = MacIcons.Preview; item.IconIsVector = true; item.Name = "Preview"; return item; }
         item.Icon = MacIcons.GenericApp;
         item.IconIsVector = true;
         EnsureIcon(item, iconSource);

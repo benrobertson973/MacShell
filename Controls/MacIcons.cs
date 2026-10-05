@@ -103,6 +103,29 @@ public static class MacIcons
         return Freeze(dg);
     });
 
+    // ------------------------------------------------------------------ Preview (NoDitherOS ui/icons.c draw_preview)
+    public static ImageSource Preview => Cached("preview", () =>
+    {
+        var dg = new DrawingGroup();
+        AppBase(dg, VGrad("#F5F5F7", "#DADADF"));
+        dg.Children.Add(new GeometryDrawing(Solid("#FFFFFF"), null, new RectangleGeometry(new Rect(30, 20, 50, 42), 3, 3)));
+        dg.Children.Add(new GeometryDrawing(VGrad("#7FC4F7", "#CDE9FB"), null, new RectangleGeometry(new Rect(20, 32, 52, 42), 3, 3)));
+        dg.Children.Add(new GeometryDrawing(VGrad("#5DBB63", "#3A9A48"), null, G("M20,74 L20,63 C29,54 37,53 45,61 C52,54 62,53 72,62 L72,74 Z")));
+        dg.Children.Add(new GeometryDrawing(new SolidColorBrush(Color.FromArgb(120, 255, 255, 255)), null, new EllipseGeometry(new Point(64, 64), 13, 13)));
+        dg.Children.Add(new GeometryDrawing(null, new Pen(Solid("#3A3A3C"), 4), new EllipseGeometry(new Point(64, 64), 13, 13)));
+        var handle = new Pen(Solid("#3A3A3C"), 7) { StartLineCap = PenLineCap.Round, EndLineCap = PenLineCap.Round };
+        dg.Children.Add(new GeometryDrawing(null, handle, G("M73.5,73.5 L84,84")));
+        return Freeze(dg);
+    });
+
+    /// <summary>The icon of one of MacShell's own apps (internal:*).</summary>
+    public static ImageSource ForInternal(string key) => key switch
+    {
+        "internal:settings" => SystemSettings,
+        "internal:preview" => Preview,
+        _ => Finder,
+    };
+
     // ----------------------------------------------------------- System Settings
     public static ImageSource SystemSettings => Cached("settings", () =>
     {

@@ -17,5 +17,10 @@
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
   </PropertyGroup>
 
+  <ItemGroup>
+    <!-- Inter: the NoDitherOS UI font, used by Preview so it looks exactly like NoDitherOS's (OFL, see Inter-LICENSE.txt) -->
+    <Resource Include="Fonts\*.ttf" />
+  </ItemGroup>
+
 
 </Project>

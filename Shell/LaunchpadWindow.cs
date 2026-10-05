@@ -88,6 +88,8 @@ public class LaunchpadWindow : Window
         Content = _root;
 
         _apps = AppCatalog.Apps.ToList();
+        // MacShell's own apps live in Launchpad too
+        if (_apps.All(a => a.ParsingName != Apps.Preview.PreviewWindow.AppId)) _apps.Add(new AppEntry { Name = "Preview", ParsingName = Apps.Preview.PreviewWindow.AppId });
         Loaded += (_, _) => { Layout(); BuildPages(); AnimateIn(); _search.Focus(); };
         Deactivated += (_, _) => CloseAnimated();
         PreviewKeyDown += OnKey;
@@ -212,7 +214,8 @@ public class LaunchpadWindow : Window
         {
             var img = new Image { Margin = new Thickness(_icon * 0.025) };
             RenderOptions.SetBitmapScalingMode(img, BitmapScalingMode.HighQuality);
-            ShellIcons.Load(a.IconSource, 48, false, b => img.Source = b ?? MacIcons.GenericApp);
+            if (a.ParsingName?.StartsWith("internal:") == true) img.Source = MacIcons.ForInternal(a.ParsingName);
+            else ShellIcons.Load(a.IconSource, 48, false, b => img.Source = b ?? MacIcons.GenericApp);
             mini.Children.Add(img);
         }
         box.Child = mini;
@@ -272,7 +275,8 @@ public class LaunchpadWindow : Window
         var sp = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, Background = Brushes.Transparent, Cursor = Cursors.Arrow };
         var img = new Image { Width = _icon, Height = _icon, Source = MacIcons.GenericApp };
         RenderOptions.SetBitmapScalingMode(img, BitmapScalingMode.HighQuality);
-        ShellIcons.Load(app.IconSource, 256, false, b => { if (b != null) img.Source = b; }, priority, "dock:" + app.IconSource);
+        if (app.ParsingName?.StartsWith("internal:") == true) img.Source = MacIcons.ForInternal(app.ParsingName);
+        else ShellIcons.Load(app.IconSource, 256, false, b => { if (b != null) img.Source = b; }, priority, "dock:" + app.IconSource);
         var iconHost = new Border { Child = img, Padding = new Thickness(_icon * 0.04), CornerRadius = new CornerRadius(_icon * 0.24), HorizontalAlignment = HorizontalAlignment.Center };
         if (highlight) iconHost.Background = new SolidColorBrush(Color.FromArgb(0x40, 0xFF, 0xFF, 0xFF));
         sp.Children.Add(iconHost);

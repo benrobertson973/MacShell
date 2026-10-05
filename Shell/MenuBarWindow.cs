@@ -312,7 +312,37 @@ public class MenuBarWindow : Window
         var app = WindowTracker.ActiveApp;
         if (app == null || app.Key == WindowTracker.FinderKey) AddFinderMenus();
         else if (app.Key == "internal:settings") AddSettingsMenus();
+        else if (app.Key == Apps.Preview.PreviewWindow.AppId) AddPreviewMenus();
         else AddAppMenus(app);
+    }
+
+    /// <summary>A menu whose items are rebuilt every time it opens (enabled states follow the front document).</summary>
+    MenuItem LiveMenu(string header, Func<object[]> build)
+    {
+        var mi = TopMenu(header, false, build());
+        mi.SubmenuOpened += (_, e) =>
+        {
+            if (e.OriginalSource != mi) return;
+            mi.Items.Clear();
+            foreach (var i in build()) Mb.Add(mi.Items, i);
+        };
+        return mi;
+    }
+
+    void AddPreviewMenus()
+    {
+        _menu.Items.Add(TopMenu("Preview", true,
+            Mb.Item("About Preview", AboutWindow.ShowWindow),
+            Mb.Sep(),
+            Mb.Item("Hide Preview", Apps.Preview.PreviewWindow.HideAll, "⌘H"),
+            Mb.Sep(),
+            Mb.Item("Quit Preview", () => ShellHost.QuitInternal(Apps.Preview.PreviewWindow.AppId), "⌘Q")));
+        _menu.Items.Add(LiveMenu("File", Apps.Preview.PreviewWindow.MenuFile));
+        _menu.Items.Add(LiveMenu("Edit", Apps.Preview.PreviewWindow.MenuEdit));
+        _menu.Items.Add(LiveMenu("View", Apps.Preview.PreviewWindow.MenuView));
+        _menu.Items.Add(LiveMenu("Tools", Apps.Preview.PreviewWindow.MenuTools));
+        _menu.Items.Add(WindowMenu(WindowTracker.FindByKey(Apps.Preview.PreviewWindow.AppId)));
+        _menu.Items.Add(HelpMenu("Preview"));
     }
 
     MenuItem TopMenu(object header, bool bold = false, params object[] items)

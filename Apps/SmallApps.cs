@@ -163,7 +163,7 @@ public class ForceQuitWindow : MacWindow
         {
             var sp = new StackPanel { Orientation = Orientation.Horizontal, Height = 24 };
             var img = new Image { Width = 18, Height = 18, Margin = new Thickness(0, 0, 8, 0) };
-            if (app.IsInternal) img.Source = app.Key == "internal:settings" ? MacIcons.SystemSettings : MacIcons.Finder;
+            if (app.IsInternal) img.Source = MacIcons.ForInternal(app.Key);
             else if (app.IconSource != null) ShellIcons.Load(app.IconSource, 48, false, b => img.Source = b);
             sp.Children.Add(img);
             sp.Children.Add(new TextBlock { Text = app.Name, VerticalAlignment = VerticalAlignment.Center });

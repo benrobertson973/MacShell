@@ -338,7 +338,7 @@ public class AppSwitcherWindow : Window
             var sp = new StackPanel();
             var img = new Image { Width = IconSize, Height = IconSize };
             RenderOptions.SetBitmapScalingMode(img, BitmapScalingMode.HighQuality);
-            if (app.IsInternal) img.Source = app.Key == "internal:settings" ? MacIcons.SystemSettings : MacIcons.Finder;
+            if (app.IsInternal) img.Source = MacIcons.ForInternal(app.Key);
             else if (app.IconSource != null) ShellIcons.Load(app.IconSource, 256, false, b => img.Source = b ?? MacIcons.GenericApp, true, "dock:" + app.IconSource);
             else img.Source = MacIcons.GenericApp;
             var cell = new Border { CornerRadius = new CornerRadius(16), Padding = new Thickness(8), Margin = new Thickness(2, 0, 2, 0), Child = img };

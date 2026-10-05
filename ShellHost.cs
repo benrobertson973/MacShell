@@ -206,6 +206,10 @@ public static class ShellHost
             case "menuclose": MenuBar?.OpenMenu(-1); break;
             case "offscreen": Offscreen = arg == "on"; break;
             case "delay": { var t = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3) }; t.Tick += (_, _) => { t.Stop(); RunCommand(arg); }; t.Start(); break; }
+            case "previewdo":   // (only ever the test picture, never a document the user has open)
+                Apps.Preview.PreviewWindow.All.FirstOrDefault(w => w.Title.StartsWith("pvtest", StringComparison.OrdinalIgnoreCase))?.TestAction(arg);
+                break;
+            case "preview": if (string.IsNullOrEmpty(arg)) Apps.Preview.PreviewWindow.OpenApp(); else Apps.Preview.PreviewWindow.Open(arg); break;
             case "checkupdate": _ = Updater.CheckAsync(userInitiated: true); break;
             case "updaterestart": if (Updater.Staged != null) Updater.Restart(); break;
             case "dumpversion": File.WriteAllText(Path.Combine(Settings.DataDirectory, "version.txt"), $"{Updater.VersionText} exe={Environment.ProcessPath}"); break;
@@ -267,7 +271,7 @@ public static class ShellHost
     {
         var w = Application.Current.Windows.Cast<Window>().FirstOrDefault(x => x.Title == title);
         if (w?.Content is not FrameworkElement fe || fe.ActualWidth < 1) return;
-        double s = 1.5;
+        double s = System.Windows.Media.VisualTreeHelper.GetDpi(w).DpiScaleX;   // the real screen scale
         var dv = new System.Windows.Media.DrawingVisual();
         using (var dc = dv.RenderOpen())
         {
@@ -292,6 +296,7 @@ public static class ShellHost
             case "internal:finder": OpenFinderOrActivate(); break;
             case "internal:launchpad": LaunchpadWindow.Toggle(); break;
             case "internal:settings": SettingsWindow.ShowPane(null); break;
+            case Apps.Preview.PreviewWindow.AppId: Apps.Preview.PreviewWindow.OpenApp(); break;
             case "internal:missioncontrol": MissionControlWindow.Toggle(); break;
             case "internal:trash": OpenFinder(FinderLocation.Trash); break;
             case "internal:downloads": OpenFinder(GetKnownFolder(FOLDERID_Downloads)); break;
@@ -301,6 +306,7 @@ public static class ShellHost
     public static void QuitInternal(string key)
     {
         if (key == "internal:settings") SettingsWindow.Instance?.Close();
+        else if (key == Apps.Preview.PreviewWindow.AppId) { foreach (var w in Apps.Preview.PreviewWindow.All.ToList()) w.Close(); Apps.Preview.PreviewPanels.CloseAll(); }
         else if (key == WindowTracker.FinderKey) foreach (var w in FinderWindow.All.ToList()) w.Close();
     }
 
