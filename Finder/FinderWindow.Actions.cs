@@ -230,10 +230,10 @@ public partial class FinderWindow
     IEnumerable<object> SortMenuItems() => new object[]
     {
         Mb.SectionHeader("Sort By"),
-        Mb.Item("Name", () => SortBy("name"), isChecked: _sortKey == "name"),
-        Mb.Item("Kind", () => SortBy("kind"), isChecked: _sortKey == "kind"),
-        Mb.Item("Date Modified", () => SortBy("date"), isChecked: _sortKey == "date"),
-        Mb.Item("Size", () => SortBy("size"), isChecked: _sortKey == "size"),
+        Mb.Item("Name", () => SortBy("name"), isChecked: SortKey == "name"),
+        Mb.Item("Kind", () => SortBy("kind"), isChecked: SortKey == "kind"),
+        Mb.Item("Date Modified", () => SortBy("date"), isChecked: SortKey == "date"),
+        Mb.Item("Size", () => SortBy("size"), isChecked: SortKey == "size"),
         Mb.Sep(),
         Mb.Item("Keep Folders on Top", () => { Settings.Current.FinderFoldersOnTop = !Settings.Current.FinderFoldersOnTop; Settings.Save(); Rebuild(); }, isChecked: Settings.Current.FinderFoldersOnTop),
     };

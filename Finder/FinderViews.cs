@@ -470,7 +470,9 @@ public class ListView2 : FinderView
             tb.FontWeight = on ? FontWeights.SemiBold : FontWeights.Normal;
             tb.SetResourceReference(TextBlock.ForegroundProperty, on ? "LabelBrush" : "SecondaryLabelBrush");
             _headerChevron[k].Visibility = on ? Visibility.Visible : Visibility.Collapsed;
-            _headerChevron[k].Symbol = Host.SortAscending ? "chevron.up" : "chevron.down";
+            // Date and size sort newest/largest first by default: that is a descending order (chevron down, as on a Mac).
+            bool descending = (k is "date" or "size") == Host.SortAscending;
+            _headerChevron[k].Symbol = descending ? "chevron.down" : "chevron.up";
         }
     }
 

@@ -43,8 +43,6 @@ public partial class FinderWindow : MacWindow, IFinderHost
     FileSystemWatcher _watcher;
     DispatcherTimer _refreshTimer, _searchTimer;
     string _pendingSelect;
-    string _sortKey = "name";
-    bool _sortAsc = true;
 
     // chrome
     readonly Grid _layout = new();
@@ -987,7 +985,7 @@ public partial class FinderWindow : MacWindow, IFinderHost
 
     List<FileItem> Sort(IEnumerable<FileItem> items)
     {
-        Comparison<FileItem> cmp = _sortKey switch
+        Comparison<FileItem> cmp = SortKey switch
         {
             "kind" => (a, b) => { int c = string.Compare(a.Kind, b.Kind, StringComparison.CurrentCultureIgnoreCase); return c != 0 ? c : NativeMethods.StrCmpLogicalW(a.Name, b.Name); },
             "date" => (a, b) => { int c = b.Modified.CompareTo(a.Modified); return c != 0 ? c : NativeMethods.StrCmpLogicalW(a.Name, b.Name); },
@@ -999,18 +997,32 @@ public partial class FinderWindow : MacWindow, IFinderHost
         {
             if (Settings.Current.FinderFoldersOnTop && a.IsFolder != b.IsFolder) return a.IsFolder ? -1 : 1;
             int c = cmp(a, b);
-            return _sortAsc ? c : -c;
+            return SortAscending ? c : -c;
         });
         return list;
     }
 
-    public string SortKey => _sortKey;
-    public bool SortAscending => _sortAsc;
+    // Folders share one sort; Recents keeps its own, newest first (Date Modified) like macOS.
+    string _folderSortKey = "name", _recentsSortKey = "date";
+    bool _folderSortAsc = true, _recentsSortAsc = true;
+    bool InRecents => _tab?.Location == FinderLocation.Recents;
+
+    public string SortKey
+    {
+        get => InRecents ? _recentsSortKey : _folderSortKey;
+        private set { if (InRecents) _recentsSortKey = value; else _folderSortKey = value; }
+    }
+
+    public bool SortAscending
+    {
+        get => InRecents ? _recentsSortAsc : _folderSortAsc;
+        private set { if (InRecents) _recentsSortAsc = value; else _folderSortAsc = value; }
+    }
 
     public void SortBy(string key)
     {
-        if (_sortKey == key) _sortAsc = !_sortAsc;
-        else { _sortKey = key; _sortAsc = true; }
+        if (SortKey == key) SortAscending = !SortAscending;
+        else { SortKey = key; SortAscending = true; }
         var sel = SelectedItems;
         Rebuild();
         foreach (var s in sel) s.IsSelected = true;
