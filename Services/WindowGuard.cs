@@ -21,19 +21,36 @@ public static class WindowGuard
     const uint SMTO_ABORTIFHUNG = 0x2;
 
     static int MenuBottom => ShellHost.ScreenPx.Top + (int)Math.Round(ShellHost.MenuBarHeight * ShellHost.Scale);
+    /// <summary>Top of the Dock's reserved strip (the screen bottom when the Dock auto-hides).</summary>
+    static int DockTop => ShellHost.ScreenPx.Bottom - (int)Math.Round((ShellHost.Dock?.ReservedHeight ?? 0) * ShellHost.Scale);
+
+    static bool _bottomResize;
 
     public static void OnMoveSizeStart(IntPtr hwnd)
     {
+        _bottomResize = false;
         if (!ShellHost.TakeoverEnabled || !IsGuardable(hwnd)) return;
         GetCursorPos(out var cur);
         int hit = HitTest(hwnd, cur);
-        if (hit is not (HTCAPTION or HTTOP or HTTOPLEFT or HTTOPRIGHT)) return;   // other resizes stay unconstrained
         var vb = GetVisibleBounds(hwnd);
-        int grab = Math.Max(0, cur.Y - vb.Top);
-        int minY = MenuBottom + grab;
-        if (cur.Y < minY) minY = cur.Y;    // already overlapping when the drag began: don't yank the pointer
         int vx = GetSystemMetrics(SM_XVIRTUALSCREEN), vy = GetSystemMetrics(SM_YVIRTUALSCREEN);
-        var r = new RECT(vx, minY, vx + GetSystemMetrics(SM_CXVIRTUALSCREEN), vy + GetSystemMetrics(SM_CYVIRTUALSCREEN));
+        var r = new RECT(vx, vy, vx + GetSystemMetrics(SM_CXVIRTUALSCREEN), vy + GetSystemMetrics(SM_CYVIRTUALSCREEN));
+        if (hit is HTCAPTION or HTTOP or HTTOPLEFT or HTTOPRIGHT)
+        {
+            int grab = Math.Max(0, cur.Y - vb.Top);
+            int minY = MenuBottom + grab;
+            if (cur.Y < minY) minY = cur.Y;    // already overlapping when the drag began: don't yank the pointer
+            r.Top = minY;
+        }
+        else if (hit is HTBOTTOM or HTBOTTOMLEFT or HTBOTTOMRIGHT && OnPrimary(vb))
+        {
+            // resizing never takes a window under the Dock (moving it there by the title bar is still allowed)
+            _bottomResize = true;
+            int maxY = DockTop - Math.Max(0, vb.Bottom - cur.Y);
+            if (cur.Y > maxY) maxY = cur.Y;
+            r.Bottom = maxY + 1;
+        }
+        else return;   // other resizes stay unconstrained
         if (!ClipCursor(ref r)) return;
         _clipping = true;
         _active = hwnd;
@@ -43,10 +60,68 @@ public static class WindowGuard
 
     public static void OnMoveSizeEnd(IntPtr hwnd)
     {
+        bool bottomResize = _bottomResize;
+        _bottomResize = false;
         Release();
         var t = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(60) };
-        t.Tick += (_, _) => { t.Stop(); KeepBelowMenuBar(hwnd); };
+        t.Tick += (_, _) => { t.Stop(); KeepBelowMenuBar(hwnd); if (bottomResize) KeepAboveDock(hwnd, move: false); };
         t.Start();
+    }
+
+    // ------------------------------------------------------------------ new windows: never open under the Dock
+
+    static readonly HashSet<IntPtr> _seen = new();
+    static bool _primed;
+
+    /// <summary>
+    /// Called after every window-list refresh. Windows MacShell hasn't seen before are fitted between the menu bar
+    /// and the Dock — once when they appear, and again shortly after, since many apps restore their saved
+    /// position right after showing. Windows already open when MacShell starts are left where they are.
+    /// </summary>
+    public static void NoticeWindows(IEnumerable<IntPtr> windows)
+    {
+        var fresh = new List<IntPtr>();
+        foreach (var h in windows) if (_seen.Add(h) && _primed) fresh.Add(h);
+        _seen.RemoveWhere(h => !IsWindow(h));
+        _primed = true;
+        foreach (var h in fresh)
+        {
+            var hwnd = h;
+            foreach (int ms in new[] { 150, 900 })
+            {
+                var t = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(ms) };
+                t.Tick += (_, _) => { t.Stop(); if (hwnd != _active && (GetAsyncKeyState(VK_LBUTTON) & 0x8000) == 0) KeepAboveDock(hwnd, move: true); };
+                t.Start();
+            }
+        }
+    }
+
+    static bool OnPrimary(RECT vb)
+    {
+        var scr = ShellHost.ScreenPx;
+        int cx = (vb.Left + vb.Right) / 2, cy = (vb.Top + vb.Bottom) / 2;
+        return cx >= scr.Left && cx < scr.Right && cy >= scr.Top && cy < scr.Bottom;
+    }
+
+    /// <summary>
+    /// Brings a window's bottom edge up to the Dock: by moving it up (<paramref name="move"/>, for new windows)
+    /// as far as the menu bar allows, then by shrinking it if it is resizable.
+    /// </summary>
+    public static void KeepAboveDock(IntPtr hwnd, bool move)
+    {
+        if (!ShellHost.TakeoverEnabled || !IsGuardable(hwnd)) return;
+        var vb = GetVisibleBounds(hwnd);
+        if (!OnPrimary(vb)) return;   // the Dock is on the primary display only
+        int dockTop = DockTop, menuBottom = MenuBottom;
+        if (vb.Bottom <= dockTop) return;
+        int top = vb.Top, height = vb.Bottom - vb.Top;
+        if (move) top = Math.Max(menuBottom, dockTop - height);
+        bool resizable = (GetStyle(hwnd) & WS_THICKFRAME) != 0;
+        if (resizable && top + height > dockTop) height = Math.Max(120, dockTop - top);
+        if (top == vb.Top && height == vb.Bottom - vb.Top) return;
+        GetWindowRect(hwnd, out var outer);
+        int dy = top - vb.Top, dh = height - (vb.Bottom - vb.Top);
+        SetWindowPos(hwnd, IntPtr.Zero, outer.Left, outer.Top + dy, outer.Right - outer.Left, outer.Bottom - outer.Top + dh, SWP_NOZORDER | SWP_NOACTIVATE);
     }
 
     static DispatcherTimer CreateWatch()

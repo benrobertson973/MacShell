@@ -219,6 +219,8 @@ public static class ShellHost
                 break;
             case "theme": Settings.Current.Appearance = arg; Settings.Save(); Theme.Apply(); break;
             case "snap": Snapshot(arg); break;
+            case "dumpspotlater": { var t = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2.5) }; t.Tick += (_, _) => { t.Stop(); File.WriteAllText(Path.Combine(Settings.DataDirectory, "spotlight.txt"), SpotlightWindow.Describe()); }; t.Start(); break; }
+            case "snaplater": { var t = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2.5) }; t.Tick += (_, _) => { t.Stop(); Snapshot(arg); }; t.Start(); break; }
             case "dumpdock":
                 {
                     var sb = new System.Text.StringBuilder();

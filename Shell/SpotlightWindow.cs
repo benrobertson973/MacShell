@@ -48,6 +48,9 @@ public class SpotlightWindow : Window
     const double PanelWidth = 680;
     bool _closing;
 
+    /// <summary>Diagnostics: selected row index/group and list scroll offset (no result titles).</summary>
+    public static string Describe() => _instance == null ? "closed" : $"sel={_instance._sel} group={(_instance._sel < _instance._rows.Count ? _instance._rows[_instance._sel].r.Group : "-")} rows={_instance._rows.Count} offset={_instance._listScroll.VerticalOffset:0}";
+
     public static void Toggle()
     {
         if (_instance != null) { _instance.Close(); return; }
@@ -218,7 +221,7 @@ public class SpotlightWindow : Window
         // web
         list.Add(new Result
         {
-            Title = $"Search the Web for â€œ{q}â€", Group = "Web", Kind = "Web Search",
+            Title = $"Search the Web for “{q}”", Group = "Web", Kind = "Web Search",
             Icon = MacIcons.Tile("globe", "#5AC8FA", "#1E88E5"),
             Open = () => { try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("https://www.google.com/search?q=" + Uri.EscapeDataString(q)) { UseShellExecute = true }); } catch { } Close(); },
         });
@@ -251,14 +254,16 @@ public class SpotlightWindow : Window
                 foreach (var f in docs) extra.Add(FileResult(f, "Documents"));
                 foreach (var f in folders) extra.Add(FileResult(f, "Folders"));
                 _results.InsertRange(insertAt, extra);
-                if (_results.Count > 0 && _results[0].Group == "Web" && extra.Count > 0)
+                if (extra.Count > 0 && !_results.Any(r => r.Group == "Top Hit"))
                 {
                     var t0 = extra[0];
                     _results.Remove(t0);
                     t0.Group = "Top Hit";
                     _results.Insert(0, t0);
                 }
-                var keep = _sel < _rows.Count ? _rows[_sel].r : null;
+                // Keep a row the user moved to; otherwise the (new) Top Hit stays selected, like macOS.
+                var keep = _sel > 0 && _sel < _rows.Count ? _rows[_sel].r : null;
+                _sel = 0;
                 Render();
                 if (keep != null) { int i = _results.IndexOf(keep); if (i >= 0) Select(i); }
             });
@@ -313,7 +318,7 @@ public class SpotlightWindow : Window
 
     static string TryCalc(string q)
     {
-        string expr = q.Replace("Ã—", "*").Replace("Ã·", "/").Replace("x", "*").Replace(",", "");
+        string expr = q.Replace("×", "*").Replace("÷", "/").Replace("x", "*").Replace(",", "");
         if (!Regex.IsMatch(expr, @"^[\d\s\.\+\-\*/\(\)%\^]+$") || !Regex.IsMatch(expr, @"\d\s*[\+\-\*/%\^]\s*[\d\(]")) return null;
         try
         {
@@ -331,6 +336,7 @@ public class SpotlightWindow : Window
     void Render()
     {
         _list.Children.Clear();
+        _listScroll.ScrollToTop();   // a new result list starts at the top, not at the previous scroll position
         _rows.Clear();
         _resultsArea.Visibility = _results.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
         string lastGroup = null;
@@ -391,7 +397,8 @@ public class SpotlightWindow : Window
                 t.SetResourceReference(TextBlock.ForegroundProperty, "LabelBrush");
             }
         }
-        _rows[i].row.BringIntoView();
+        var shown = _rows[i].row;
+        Dispatcher.BeginInvoke(() => shown.BringIntoView(), System.Windows.Threading.DispatcherPriority.Loaded);   // after layout
         var sel = _rows[i].r;
         _queryIcon.Source = sel.Icon;
         _queryIcon.Visibility = sel.Icon != null ? Visibility.Visible : Visibility.Collapsed;

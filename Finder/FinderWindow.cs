@@ -625,6 +625,7 @@ public partial class FinderWindow : MacWindow, IFinderHost
             : location == FinderLocation.Recents ? "icons"
             : Settings.Current.FinderDefaultView;
         ApplyViewMode();
+        _view?.ScrollToTop();
         Reload(false);
         UpdateChrome();
         RefreshTabBar();
@@ -1090,6 +1091,7 @@ public partial class FinderWindow : MacWindow, IFinderHost
             ApplyViewMode();
             UpdateChrome();
             RefreshTabBar();
+            _view?.ScrollToTop();
             Reload(false);
             return;
         }
@@ -1103,6 +1105,7 @@ public partial class FinderWindow : MacWindow, IFinderHost
         string folder = _tab.Location;
         bool hidden = Settings.Current.ShowHiddenFiles;
         _all = new List<FileItem>();
+        _view?.ScrollToTop();
         Rebuild();
         Task.Run(() =>
         {

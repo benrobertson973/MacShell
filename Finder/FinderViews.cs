@@ -81,6 +81,8 @@ public abstract class FinderView
     public IReadOnlyList<FileItem> Items { get; protected set; } = Array.Empty<FileItem>();
     public abstract void Show(IReadOnlyList<FileItem> items);
     public abstract void Reveal(FileItem item);
+    /// <summary>New contents (another folder, a new search) start at the top; refreshes keep their scroll position.</summary>
+    public void ScrollToTop() => FindScrollViewer(Root)?.ScrollToTop();
     public virtual void OnSelectionChanged() { }
     public virtual bool HandleKey(Key key, ModifierKeys mods) => false;
     public bool Active { set => FinderViewState.SetIsActive(Root, value); }

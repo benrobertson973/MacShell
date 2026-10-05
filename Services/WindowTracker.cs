@@ -374,6 +374,7 @@ public static class WindowTracker
 
         string sig = string.Join("|", list.Select(w => $"{w.Hwnd}:{w.AppKey}:{w.Minimized}:{w.Title}"));
         Windows = list;
+        WindowGuard.NoticeWindows(list.Where(w => !w.IsInternal).Select(w => w.Hwnd));
         Apps = apps;
         if (ActiveApp != null && apps.TryGetValue(ActiveApp.Key, out var refreshed)) ActiveApp = refreshed;
         if (sig != _lastSignature)
