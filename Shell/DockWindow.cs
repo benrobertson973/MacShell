@@ -822,7 +822,15 @@ public class DockWindow : Window
             _mouse = e.GetPosition(this);
             IsHovering = true;
             e.Effects = DragDropEffects.None;
-            if (AppTargetsFrom(e.Data).Count > 0)
+            var overTrash = HitTest(_mouse);
+            if (overTrash?.Kind == "trash" && e.Data.GetDataPresent(DataFormats.FileDrop))
+            {
+                // anything dropped on the Trash is trashed — including apps (.exe/.lnk), which elsewhere get pinned
+                _extInsert = false;
+                _dropTarget = overTrash;
+                e.Effects = DragDropEffects.Move;
+            }
+            else if (AppTargetsFrom(e.Data).Count > 0)
             {
                 // apps / PWAs / shortcuts: open a gap to pin them
                 _extInsert = true;
