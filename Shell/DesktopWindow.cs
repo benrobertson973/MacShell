@@ -1037,6 +1037,7 @@ public class DesktopWindow : Window
         string label = sel.Count == 1 ? $"“{first.DisplayName}”" : $"{sel.Count} Items";
         return Mb.Context(
             Mb.Item("Open", () => Execute("open")),
+            sel.Count == 1 && !first.IsFolder && !first.IsApp && File.Exists(first.FullPath) ? OpenWith.Submenu(first.FullPath) : null,
             Mb.Sep(),
             Mb.Item("Move to Trash", () => Execute("trash")),
             Mb.Sep(),

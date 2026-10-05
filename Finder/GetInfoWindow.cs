@@ -6,6 +6,7 @@ using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Shell;
 using MacShell.Controls;
+using MacShell.Native;
 using MacShell.Services;
 
 namespace MacShell.Finder;
@@ -190,12 +191,69 @@ public class GetInfoWindow : MacWindow
         // Open with
         if (!it.IsFolder && !it.IsApp && !string.IsNullOrEmpty(it.Extension))
         {
+            // like macOS: the popup picks the app for this document; Change All… makes it the default for the kind
             var ow = new StackPanel();
-            ow.Children.Add(L(QuickLookWindow.DefaultAppName(it.Extension) ?? "No default application", 12));
-            var change = new Button { Content = "Change All…", Style = (Style)Application.Current.Resources["MacButton"], HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(0, 8, 0, 0) };
-            change.Click += (_, _) => AppCatalog.OpenWith(it.FullPath);
+            var pick = new Button { Style = (Style)Application.Current.Resources["MacButton"], HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Stretch, Padding = new Thickness(6, 0, 6, 0) };
+            OwApp current = OpenWith.DefaultFor(it.FullPath);
+            void ShowCurrent()
+            {
+                var img = new Image { Width = 16, Height = 16, Margin = new Thickness(0, 0, 6, 0), Source = MacIcons.GenericApp };
+                RenderOptions.SetBitmapScalingMode(img, BitmapScalingMode.HighQuality);
+                if (current?.Key.StartsWith("internal:") == true) img.Source = MacIcons.ForInternal(current.Key);
+                else if (!string.IsNullOrEmpty(current?.IconSource)) ShellIcons.Load(current.IconSource, 32, false, b => { if (b != null) img.Source = b; });
+                var dp = new DockPanel();
+                var chev = new SymbolIcon { Symbol = "chevron.updown", Width = 9, Height = 11, StrokeWidth = 1.6, Margin = new Thickness(6, 0, 0, 0) };
+                chev.SetResourceReference(SymbolIcon.ForegroundProperty, "SecondaryLabelBrush");
+                DockPanel.SetDock(img, Dock.Left);
+                DockPanel.SetDock(chev, Dock.Right);
+                dp.Children.Add(img);
+                dp.Children.Add(chev);
+                dp.Children.Add(new TextBlock { Text = current == null ? "No application" : current.Name, TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center });
+                pick.Content = dp;
+                dp.Width = Math.Max(0, pick.ActualWidth - 14);   // (icon and name on the left, arrows at the right edge)
+                pick.SizeChanged += (_, _) => dp.Width = Math.Max(0, pick.ActualWidth - 14);
+            }
+            ShowCurrent();
+            pick.Click += (_, _) =>
+            {
+                var items = new List<object>();
+                foreach (var a in OpenWith.AppsFor(it.FullPath, recommendedOnly: true).Append(current).Where(a => a != null)
+                             .GroupBy(a => a.Name, StringComparer.OrdinalIgnoreCase).Select(g => g.First()).OrderBy(a => a.Name, StringComparer.CurrentCultureIgnoreCase))
+                {
+                    var app = a;
+                    items.Add(Mb.Item(app.Name, () => { OpenWith.SetDefaultForFile(it.FullPath, app); current = app; ShowCurrent(); }, isChecked: current?.Name == app.Name));
+                }
+                items.Add(Mb.Sep());
+                items.Add(Mb.Item("Other…", () =>
+                {
+                    var app = AppChooserWindow.Pick(it.FullPath);
+                    if (app == null) return;
+                    OpenWith.SetDefaultForFile(it.FullPath, app);
+                    current = app;
+                    ShowCurrent();
+                }));
+                var cm = Mb.Context(items.ToArray());
+                cm.PlacementTarget = pick;
+                cm.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom;
+                cm.IsOpen = true;
+            };
+            ow.Children.Add(pick);
+            ow.Children.Add(L($"Use this application to open all documents like this one.", 11, "SecondaryLabelBrush"));
+            ((FrameworkElement)ow.Children[^1]).Margin = new Thickness(0, 6, 0, 0);
+            var change = new Button { Content = "Change All…", Style = (Style)Application.Current.Resources["MacButton"], HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(0, 6, 0, 0) };
+            change.Click += (_, _) =>
+            {
+                if (current == null) return;
+                if (ShellHost.Alert($"Are you sure you want to change all similar documents to open with the application “{current.Name}”?",
+                        $"This change will apply to all documents with extension “{it.Extension.TrimStart('.')}”.", "Cancel", "Continue") == "Continue")
+                    OpenWith.SetDefaultForKind(it.FullPath, current);
+            };
             ow.Children.Add(change);
-            Section("Open with:", ow, false);
+            var winLink = new TextBlock { Text = "Windows Default…", FontSize = 11, Margin = new Thickness(0, 8, 0, 0), Cursor = Cursors.Hand, ToolTip = "Choose the app Windows itself uses for files like this (outside MacShell)" };
+            winLink.SetResourceReference(TextBlock.ForegroundProperty, "AccentBrush");
+            winLink.MouseLeftButtonUp += (_, _) => AppCatalog.OpenWith(it.FullPath);
+            ow.Children.Add(winLink);
+            Section("Open with:", ow, true);
         }
 
         // Preview

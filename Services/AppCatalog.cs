@@ -167,8 +167,8 @@ public static class AppCatalog
 
     public static void OpenFile(string path)
     {
-        // pictures open in Preview, like on a Mac
-        if (File.Exists(path) && MacShell.Apps.Preview.PvFile.IsImage(path)) { MacShell.Apps.Preview.PreviewWindow.Open(path); return; }
+        // the app chosen in MacShell, if any; otherwise Windows decides
+        if (File.Exists(path) && MacShell.Services.OpenWith.OpenDefault(path)) return;   // MacShell's own default (Get Info / Always Open With / Preview for pictures)
         try
         {
             Process.Start(new ProcessStartInfo(path) { UseShellExecute = true, WorkingDirectory = Path.GetDirectoryName(path) ?? "" });

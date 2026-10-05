@@ -278,10 +278,7 @@ public partial class FinderWindow
         var list = new List<object>
         {
             Mb.Item("Open", OpenSelection),
-            sel.Count == 1 && !first.IsFolder ? Mb.Sub("Open With",
-                Mb.Item("Default Application", () => AppCatalog.OpenFile(first.FullPath)),
-                Mb.Sep(),
-                Mb.Item("Other…", () => AppCatalog.OpenWith(first.FullPath))) : null,
+            sel.Count == 1 && !first.IsFolder && !first.IsApp ? OpenWith.Submenu(first.FullPath) : null,
             sel.Count == 1 && first.IsFolder ? Mb.Item("Open in New Tab", () => NewTab(first.FullPath)) : null,
             Mb.Sep(),
             Mb.Item("Move to Trash", () => Execute("trash")),

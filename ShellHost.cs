@@ -209,6 +209,14 @@ public static class ShellHost
             case "previewdo":   // (only ever the test picture, never a document the user has open)
                 Apps.Preview.PreviewWindow.All.FirstOrDefault(w => w.Title.StartsWith("pvtest", StringComparison.OrdinalIgnoreCase))?.TestAction(arg);
                 break;
+            case "openwithdump":   // diagnostics: what can open <file>, and what it opens with
+                File.WriteAllText(Path.Combine(Settings.DataDirectory, "openwith.txt"),
+                    $"default: {OpenWith.DefaultFor(arg)?.Name} [{OpenWith.DefaultFor(arg)?.Key}] macshell={OpenWith.HasMacShellDefault(arg)} windows={OpenWith.WindowsDefaultName(Path.GetExtension(arg))}\n" +
+                    string.Join("\n", OpenWith.AppsFor(arg, false).Select(a => $"{(a.Recommended ? "*" : " ")} {a.Name} [{a.Key}] icon={a.IconSource}")));
+                break;
+            case "chooser": Finder.AppChooserWindow.Choose(arg, false); break;
+            case "closetitle": foreach (var w in Application.Current.Windows.OfType<Window>().Where(x => x.Title == arg).ToList()) w.Close(); break;
+            case "closechooser": foreach (var w in Application.Current.Windows.OfType<Finder.AppChooserWindow>().ToList()) w.Close(); break;
             case "preview": if (string.IsNullOrEmpty(arg)) Apps.Preview.PreviewWindow.OpenApp(); else Apps.Preview.PreviewWindow.Open(arg); break;
             case "checkupdate": _ = Updater.CheckAsync(userInitiated: true); break;
             case "updaterestart": if (Updater.Staged != null) Updater.Restart(); break;
