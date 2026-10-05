@@ -239,6 +239,28 @@ public static class ShellHost
                     cm.IsOpen = true;
                     break;
                 }
+            case "webdroptest":   // diagnostics: webdroptest:<folder> - a virtual-file drag and a link-only drag, saved into <folder>
+                {
+                    var png = File.ReadAllBytes(Path.Combine(arg, "..", "pvtest-orig.png"));
+                    var desc = new byte[4 + 592];
+                    BitConverter.GetBytes(1).CopyTo(desc, 0);
+                    System.Text.Encoding.Unicode.GetBytes("cute cat.png").CopyTo(desc, 4 + 72);
+                    var d1 = new DataObject();
+                    d1.SetData("FileGroupDescriptorW", new MemoryStream(desc));
+                    d1.SetData("FileContents", new MemoryStream(png));
+                    d1.SetData("UniformResourceLocatorW", new MemoryStream(System.Text.Encoding.Unicode.GetBytes("https://example.com/cat-page\0")));
+                    var d2 = new DataObject();
+                    d2.SetData("HTML Format", "Version:0.9\r\nSourceURL:http://localhost:8766/page.html\r\n<html><body><!--StartFragment--><img src=\"/images/dog.png\" alt=x><!--EndFragment--></body></html>");
+                    d2.SetData("UniformResourceLocatorW", new MemoryStream(System.Text.Encoding.Unicode.GetBytes("http://localhost:8766/page.html\0")));
+                    var i1 = WebDrop.Extract(d1);
+                    var i2 = WebDrop.Extract(d2);
+                    File.WriteAllText(Path.Combine(arg, "extract.txt"),
+                        $"virtual: {string.Join(",", i1.Select(x => $"{x.Name} bytes={x.Data?.Length} url={x.Url}"))}\n" +
+                        $"link: {string.Join(",", i2.Select(x => $"{x.Name} bytes={x.Data?.Length} url={x.Url}"))}\n" +
+                        $"has1={WebDrop.Has(d1)} has2={WebDrop.Has(d2)}\n");
+                    _ = WebDrop.SaveAsync(i1.Concat(i2).ToList(), arg, null);
+                    break;
+                }
             case "closetitle": foreach (var w in Application.Current.Windows.OfType<Window>().Where(x => x.Title == arg).ToList()) w.Close(); break;
             case "closechooser": foreach (var w in Application.Current.Windows.OfType<Finder.AppChooserWindow>().ToList()) w.Close(); break;
             case "preview": if (string.IsNullOrEmpty(arg)) Apps.Preview.PreviewWindow.OpenApp(); else Apps.Preview.PreviewWindow.Open(arg); break;

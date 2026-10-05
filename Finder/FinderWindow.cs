@@ -1351,6 +1351,15 @@ public partial class FinderWindow : MacWindow, IFinderHost
     {
         e.Effects = DragDropEffects.None;
         if (_dropHighlight != folder) { if (_dropHighlight != null) _dropHighlight.IsDropTarget = false; _dropHighlight = folder; }
+        if (WebDrop.Has(e.Data))
+        {
+            // a picture (or a link to a file) from a web browser: saved into this folder
+            string wd = DropFolderFor(folder);
+            if (wd == null || wd == FinderLocation.Trash || FinderLocation.IsVirtual(wd)) return;
+            if (folder != null) folder.IsDropTarget = true;
+            e.Effects = DragDropEffects.Copy;
+            return;
+        }
         if (!e.Data.GetDataPresent(DataFormats.FileDrop)) return;
         var files = (string[])e.Data.GetData(DataFormats.FileDrop);
         string dest = DropFolderFor(folder);
@@ -1370,6 +1379,14 @@ public partial class FinderWindow : MacWindow, IFinderHost
     public void DropOn(FileItem folder, DragEventArgs e)
     {
         DragLeft();
+        if (WebDrop.Has(e.Data))
+        {
+            string wd = DropFolderFor(folder);
+            if (wd == null || wd == FinderLocation.Trash || FinderLocation.IsVirtual(wd)) return;
+            var webItems = WebDrop.Extract(e.Data);   // (the browser's data is only there during the drop)
+            if (webItems.Count > 0) _ = WebDrop.SaveAsync(webItems, wd, null);
+            return;
+        }
         if (e.Data.GetData(DataFormats.FileDrop) is not string[] files || files.Length == 0) return;
         if (folder != null && files.Any(f => string.Equals(f, folder.FullPath, StringComparison.OrdinalIgnoreCase))) folder = null;
         string dest = DropFolderFor(folder);

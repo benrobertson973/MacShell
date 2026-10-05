@@ -659,6 +659,13 @@ public class DesktopWindow : Window
                 else if (_oleFromDesktop || AllOnDesktop(files)) e.Effects = FreeLayout ? DragDropEffects.Move : DragDropEffects.None;
                 else e.Effects = FileOps.ShouldMove(files, UserDesktop, e.KeyStates) ? DragDropEffects.Move : DragDropEffects.Copy;
             }
+            else if (WebDrop.Has(e.Data))
+            {
+                // a picture (or a link to a file) dragged out of a web browser: it is saved here
+                var it = ItemAt(e.OriginalSource);
+                SetDropHighlight(it != null && it.IsFolder && !it.IsStack ? it : null);
+                e.Effects = DragDropEffects.Copy;
+            }
             e.Handled = true;
         };
         _canvas.DragLeave += (_, _) => SetDropHighlight(null);
@@ -666,6 +673,23 @@ public class DesktopWindow : Window
         {
             var folder = _dropTarget;
             SetDropHighlight(null);
+            if (WebDrop.Has(e.Data))
+            {
+                // read the browser's data now (it is gone after the drop), then save it where it was dropped
+                var webItems = WebDrop.Extract(e.Data);
+                var at = e.GetPosition(_canvas);
+                string dest = folder?.FullPath ?? UserDesktop;
+                if (webItems.Count == 0) return;
+                MeasureGrid();
+                _ = WebDrop.SaveAsync(webItems, dest, (path, i) =>
+                {
+                    if (folder != null) return;
+                    PreassignPosition(path, new Point(at.X - _cellW / 2 + (i % 5) * _cellW * 0.9, at.Y - 30 + (i / 5) * _cellH * 0.9));
+                    Settings.Save(false);
+                });
+                e.Effects = DragDropEffects.Copy;
+                return;
+            }
             if (e.Data.GetData(DataFormats.FileDrop) is not string[] files || files.Length == 0) return;
             var dropPt = e.GetPosition(_canvas);
             var keys = e.KeyStates;
