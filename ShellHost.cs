@@ -207,9 +207,13 @@ public static class ShellHost
             case "menuclose": MenuBar?.OpenMenu(-1); break;
             case "offscreen": Offscreen = arg == "on"; break;
             case "delay": { var t = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3) }; t.Tick += (_, _) => { t.Stop(); RunCommand(arg); }; t.Start(); break; }
-            case "previewdo":   // (only ever the test picture, never a document the user has open)
-                Apps.Preview.PreviewWindow.All.FirstOrDefault(w => w.Title.StartsWith("pvtest", StringComparison.OrdinalIgnoreCase))?.TestAction(arg);
-                break;
+            case "previewdo":   // (only ever the test pictures, never a document the user has open; previewdo:<title>|<action> picks one)
+                {
+                    int bar = (arg ?? "").IndexOf('|');
+                    string title = bar > 0 ? arg[..bar] : null, act = bar > 0 ? arg[(bar + 1)..] : arg;
+                    Apps.Preview.PreviewWindow.All.FirstOrDefault(w => w.Title.StartsWith("pvtest", StringComparison.OrdinalIgnoreCase) && (title == null || w.Title == title))?.TestAction(act);
+                    break;
+                }
             case "openwithdump":   // diagnostics: what can open <file>, and what it opens with
                 File.WriteAllText(Path.Combine(Settings.DataDirectory, "openwith.txt"),
                     $"default: {OpenWith.DefaultFor(arg)?.Name} [{OpenWith.DefaultFor(arg)?.Key}] macshell={OpenWith.HasMacShellDefault(arg)} windows={OpenWith.WindowsDefaultName(Path.GetExtension(arg))}\n" +

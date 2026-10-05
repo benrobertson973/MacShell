@@ -38,10 +38,63 @@ public static class DragGhost
         }
     }
 
+    /// <summary>
+    /// Drags a picture (e.g. Preview's selection) with a translucent copy of it under the pointer, at
+    /// <paramref name="width"/> × <paramref name="height"/> DIPs, the point <paramref name="grab"/> staying under the cursor.
+    /// </summary>
+    public static DragDropEffects RunImage(DependencyObject source, IDataObject data, DragDropEffects allowed, ImageSource image, double width, double height, Point grab)
+    {
+        // very large pieces are shown smaller (the grab point scales with them)
+        double k = Math.Min(1.0, 420.0 / Math.Max(1, Math.Max(width, height)));
+        Ghost ghost = null;
+        try
+        {
+            ghost = new Ghost(image, width * k, height * k, new Point(grab.X * k, grab.Y * k));
+            ghost.Show();
+            ghost.Follow();
+        }
+        catch { ghost = null; }
+        GiveFeedbackEventHandler feedback = (_, _) => ghost?.Follow();
+        DragDrop.AddGiveFeedbackHandler(source, feedback);
+        try { return DragDrop.DoDragDrop(source, data, allowed); }
+        catch { return DragDropEffects.None; }
+        finally
+        {
+            DragDrop.RemoveGiveFeedbackHandler(source, feedback);
+            try { ghost?.Close(); } catch { }
+        }
+    }
+
     class Ghost : Window
     {
         IntPtr _hwnd;
         readonly double _size;
+        readonly Point? _grab;   // picture ghosts: the point (DIPs, inside the picture) under the cursor
+
+        public Ghost(ImageSource image, double width, double height, Point grab)
+        {
+            _grab = grab;
+            WindowStyle = WindowStyle.None;
+            AllowsTransparency = true;
+            Background = Brushes.Transparent;
+            ShowInTaskbar = false;
+            ShowActivated = false;
+            Topmost = true;
+            IsHitTestVisible = false;
+            ResizeMode = ResizeMode.NoResize;
+            Width = Math.Max(1, width);
+            Height = Math.Max(1, height);
+            Left = -10000;
+            Top = -10000;
+            var img = new Image { Source = image, Width = Width, Height = Height, Opacity = 0.75, Stretch = Stretch.Fill };
+            RenderOptions.SetBitmapScalingMode(img, BitmapScalingMode.HighQuality);
+            Content = img;
+            SourceInitialized += (_, _) =>
+            {
+                _hwnd = new WindowInteropHelper(this).Handle;
+                AddExStyle(_hwnd, WS_EX_TRANSPARENT | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE);
+            };
+        }
 
         public Ghost(IList<ImageSource> icons, double size)
         {
@@ -101,6 +154,11 @@ public static class DragGhost
         {
             if (_hwnd == IntPtr.Zero) return;
             GetCursorPos(out var p);
+            if (_grab is Point g)
+            {
+                SetWindowPos(_hwnd, HWND_TOPMOST, p.X - (int)(g.X * ShellHost.Scale), p.Y - (int)(g.Y * ShellHost.Scale), 0, 0, SWP_NOSIZE | SWP_NOACTIVATE);
+                return;
+            }
             int off = (int)((20 + _size / 2) * ShellHost.Scale);
             SetWindowPos(_hwnd, HWND_TOPMOST, p.X - off, p.Y - off, 0, 0, SWP_NOSIZE | SWP_NOACTIVATE);
         }

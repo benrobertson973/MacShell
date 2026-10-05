@@ -360,6 +360,23 @@ public static class PvOps
         }
     }
 
+    /// <summary>Premultiplied "over" of <paramref name="src"/> placed at (ox, oy) in dst, clipped, exactly rounded.</summary>
+    public static void OverAt(PvImage dst, PvImage src, int ox, int oy)
+    {
+        int x0 = Math.Max(0, ox), y0 = Math.Max(0, oy), x1 = Math.Min(dst.W, ox + src.W), y1 = Math.Min(dst.H, oy + src.H);
+        for (int y = y0; y < y1; y++)
+            for (int x = x0; x < x1; x++)
+            {
+                uint s = src.Px[(y - oy) * src.W + (x - ox)], sa = s >> 24;
+                if (sa == 0) continue;
+                int i = y * dst.W + x;
+                if (sa == 255) { dst.Px[i] = s; continue; }
+                uint d = dst.Px[i], k = 255 - sa, o = 0;
+                for (int sh = 0; sh < 32; sh += 8) o |= Math.Min(255u, ((s >> sh) & 0xFF) + Div255(((d >> sh) & 0xFF) * k)) << sh;
+                dst.Px[i] = o;
+            }
+    }
+
     // ------------------------------------------------------------------ polygon coverage (lasso)
 
     /// <summary>Pixels whose centre is inside the polygon (non-zero winding): 255, others 0.</summary>

@@ -28,7 +28,7 @@ public partial class PreviewWindow : MacWindow
 
     enum Tool { Rect, Oval, Lasso, Alpha, Sketch, Draw }
     enum SelKind { None, Rect, Oval, Mask }
-    enum Drag { None, Handle, Move, Draw, SelNew, SelMove, Lasso, Alpha }
+    enum Drag { None, Handle, Move, Draw, SelNew, Lift, Lasso, Alpha }
 
     sealed class Sel
     {
@@ -61,7 +61,6 @@ public partial class PreviewWindow : MacWindow
     int _handle;
     double _px, _py;        // image position of the press
     Annot _orig;
-    Int32Rect _selOrig;
     bool _pushed;
     Annot _cur;             // freehand stroke / lasso being drawn
     int _alphaX, _alphaY;
@@ -222,20 +221,40 @@ public partial class PreviewWindow : MacWindow
         var g = GetView();
         ImgPt(g, x, y, out double cx, out double cy);
         EndText();
+        if (pics.Count == 1 && DroppedGrab(data) is Point grab)
+        {
+            // a selection dragged out of a Preview picture: its own size, where the pointer held it
+            PlacePicture(pics[0], cx, cy, grab);
+            Activate();
+            return;
+        }
         double off = 0;
         foreach (var pic in pics) { PlacePicture(pic, cx + off, cy + off); off += 12 * Unit; }
         Activate();
     }
 
-    /// <summary>A picture inside the picture: its own size, made smaller if it wouldn't fit, centred on (cx, cy).</summary>
-    void PlacePicture(PvImage pic, double cx, double cy)
+    /// <summary>
+    /// A picture inside the picture, centred on (cx, cy): its own size, made smaller if it wouldn't fit. A piece of a
+    /// picture (<paramref name="grab"/>: where the pointer holds it) keeps its size unless it is bigger than this one.
+    /// </summary>
+    void PlacePicture(PvImage pic, double cx, double cy, Point? grab = null)
     {
         double w = pic.W, h = pic.H;
-        double k = Math.Min(1.0, Math.Min(_st.Img.W * 0.6 / w, _st.Img.H * 0.6 / h));
+        double fit = grab == null ? 0.6 : 1.0;
+        double k = Math.Min(1.0, Math.Min(_st.Img.W * fit / w, _st.Img.H * fit / h));
         w *= k; h *= k;
-        cx = Math.Clamp(cx, w / 2, Math.Max(w / 2, _st.Img.W - w / 2));
-        cy = Math.Clamp(cy, h / 2, Math.Max(h / 2, _st.Img.H - h / 2));
-        var a = new Annot { Kind = AnKind.Image, Pic = pic, X0 = cx - w / 2, Y0 = cy - h / 2, X1 = cx + w / 2, Y1 = cy + h / 2 };
+        double x0, y0;
+        if (grab is Point gp)
+        {
+            x0 = Math.Clamp(cx - gp.X * w, -w * 0.9, _st.Img.W - w * 0.1);
+            y0 = Math.Clamp(cy - gp.Y * h, -h * 0.9, _st.Img.H - h * 0.1);
+        }
+        else
+        {
+            x0 = Math.Clamp(cx, w / 2, Math.Max(w / 2, _st.Img.W - w / 2)) - w / 2;
+            y0 = Math.Clamp(cy, h / 2, Math.Max(h / 2, _st.Img.H - h / 2)) - h / 2;
+        }
+        var a = new Annot { Kind = AnKind.Image, Pic = pic, X0 = x0, Y0 = y0, X1 = x0 + w, Y1 = y0 + h };
         if (!_markup) _markup = true;   // (its handles and styles are Markup's)
         AddAnnot(a);
     }
@@ -432,11 +451,13 @@ public partial class PreviewWindow : MacWindow
         }
     }
 
-    byte SelCov(int x, int y)
+    byte SelCov(int x, int y) => SelCovOf(_sel, x, y);
+
+    static byte SelCovOf(Sel sel, int x, int y)
     {
-        var r = _sel.R;
+        var r = sel.R;
         if (x < r.X || y < r.Y || x >= r.X + r.Width || y >= r.Y + r.Height) return 0;
-        switch (_sel.Kind)
+        switch (sel.Kind)
         {
             case SelKind.Rect: return 255;
             case SelKind.Oval:
@@ -445,7 +466,7 @@ public partial class PreviewWindow : MacWindow
                     double fx = (x + 0.5 - r.X - rx) / rx, fy = (y + 0.5 - r.Y - ry) / ry;
                     return fx * fx + fy * fy <= 1 ? (byte)255 : (byte)0;
                 }
-            case SelKind.Mask: return _sel.Mask[(y - r.Y) * r.Width + (x - r.X)];
+            case SelKind.Mask: return sel.Mask[(y - r.Y) * r.Width + (x - r.X)];
         }
         return 0;
     }
@@ -587,6 +608,7 @@ public partial class PreviewWindow : MacWindow
                 dc.PushClip(new RectangleGeometry(pic));
                 foreach (var a in _st.An) a.Draw(dc, g.K, g.Ox, g.Oy);
                 if (_drag == Drag.Draw && _cur != null && _cur.Pts.Count > 0) _cur.Draw(dc, g.K, g.Ox, g.Oy);
+                if (_drag == Drag.Lift) DrawLift(dc, g);
                 dc.Pop();
             }
             DrawSelection(dc, g);
@@ -1099,6 +1121,7 @@ public partial class PreviewWindow : MacWindow
         }
         _anSel = -1;
         var img = _st.Img;
+        if (CanLift(ix, iy)) { BeginLift(ix, iy); return; }   // pressed inside the selection: drag the pixels
         switch (_tool)
         {
             case Tool.Sketch:
@@ -1120,16 +1143,8 @@ public partial class PreviewWindow : MacWindow
                 _drag = Drag.Alpha;
                 break;
             default:
-                if (_sel.Kind == (_tool == Tool.Oval ? SelKind.Oval : SelKind.Rect) && SelCov((int)Math.Floor(ix), (int)Math.Floor(iy)) != 0)
-                {
-                    _selOrig = _sel.R;
-                    _drag = Drag.SelMove;
-                }
-                else
-                {
-                    SelClear();
-                    _drag = Drag.SelNew;
-                }
+                SelClear();
+                _drag = Drag.SelNew;
                 break;
         }
         Redraw();
@@ -1187,15 +1202,9 @@ public partial class PreviewWindow : MacWindow
                     _selGen++;
                     break;
                 }
-            case Drag.SelMove:
-                {
-                    var r = _selOrig;
-                    r.X = Math.Clamp(r.X + (int)Math.Round(ix - _px), 0, img.W - r.Width);
-                    r.Y = Math.Clamp(r.Y + (int)Math.Round(iy - _py), 0, img.H - r.Height);
-                    _sel.R = r;
-                    _selGen++;
-                    break;
-                }
+            case Drag.Lift:
+                LiftMove(x, y, ix, iy);
+                return;
             case Drag.Alpha:
                 _alphaTol = Math.Clamp(24 + (int)((x - _alphaSx) + (y - _alphaSy)) / 2, 0, 255);
                 break;
@@ -1231,6 +1240,9 @@ public partial class PreviewWindow : MacWindow
                 break;
             case Drag.Alpha:
                 InstantAlpha(_alphaX, _alphaY, _alphaTol);
+                break;
+            case Drag.Lift:
+                LiftDrop();
                 break;
         }
         Redraw();
@@ -1318,6 +1330,7 @@ public partial class PreviewWindow : MacWindow
             case Key.Back:
             case Key.Delete: DeleteSel(); e.Handled = true; return;
             case Key.Escape:
+                if (_drag == Drag.Lift) { _canvas.ReleaseMouseCapture(); CancelLift(); e.Handled = true; return; }
                 if (_popover != Popover.None) _popover = Popover.None;
                 else Deselect();
                 Redraw();
@@ -1372,7 +1385,15 @@ public partial class PreviewWindow : MacWindow
     {
         double x = p.X * Nd.Scale, y = p.Y * Nd.Scale;
         if (_sheet != Sheet.None) { if (leftDown) SheetMouse(x, y, false, false); return; }
-        if (_drag != Drag.None && leftDown) CanvasMove(x, y, (Keyboard.Modifiers & ModifierKeys.Shift) != 0);
+        if (_drag != Drag.None && leftDown) { CanvasMove(x, y, (Keyboard.Modifiers & ModifierKeys.Shift) != 0); return; }
+        // over a selection that can be dragged: the move cursor
+        bool movable = false;
+        if (_loaded && _drag == Drag.None && _popover == Popover.None && y >= BarsH && _sel.Kind != SelKind.None)
+        {
+            ImgPt(GetView(), x, y, out double ix, out double iy);
+            movable = CanLift(ix, iy);
+        }
+        _canvas.Cursor = movable ? Cursors.SizeAll : null;
     }
 
     internal void OnCanvasUp(Point p)
@@ -1703,6 +1724,13 @@ public partial class PreviewWindow : MacWindow
             if (e.ChangedButton != MouseButton.Left) return;
             ReleaseMouseCapture();
             _w.OnCanvasUp(e.GetPosition(this));
+        }
+
+        protected override void OnLostMouseCapture(MouseEventArgs e)
+        {
+            base.OnLostMouseCapture(e);
+            // (capture taken away mid-drag, e.g. by another window: finish it rather than leave it hanging)
+            if (e.LeftButton == MouseButtonState.Released) _w.OnCanvasUp(e.GetPosition(this));
         }
 
         protected override void OnMouseWheel(MouseWheelEventArgs e)

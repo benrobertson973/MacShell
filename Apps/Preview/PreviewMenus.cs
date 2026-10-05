@@ -118,6 +118,41 @@ public partial class PreviewWindow
             case "crop": _sel = new Sel { Kind = SelKind.Oval, R = new Int32Rect(100, 100, 400, 300) }; _selGen++; Crop(); break;
             case "savecopy": SaveCopyToDesktopTest(); break;
             case "close": Close(); break;
+            // selection dragging, driven like the mouse would (press inside the selection, move, let go)
+            case "selrect": _tool = _selTool = Tool.Rect; SelClear(); _sel = new Sel { Kind = SelKind.Rect, R = new Int32Rect(60, 120, 330, 300) }; _selGen++; Redraw(); break;
+            case "sellasso":
+                {
+                    _tool = _selTool = Tool.Lasso;
+                    _cur = new Annot();
+                    for (int i = 0; i < 40; i++) { double a = i * Math.PI * 2 / 40; _cur.Pts.Add(new Point(800 + Math.Cos(a) * 140 * (1 + 0.25 * Math.Sin(3 * a)), 270 + Math.Sin(a) * 110)); }
+                    LassoSelection();
+                    _cur = null;
+                    Redraw();
+                    break;
+                }
+            case "liftstart":
+                {
+                    var g = GetView();
+                    var c = new Point(_sel.R.X + _sel.R.Width / 2.0, _sel.R.Y + _sel.R.Height / 2.0);
+                    _testPress = new Point(g.Ox + c.X * g.K, g.Oy + c.Y * g.K);
+                    CanvasDown(_testPress.X, _testPress.Y, 1);
+                    CanvasMove(_testPress.X + 40, _testPress.Y + 20, false);
+                    CanvasMove(_testPress.X + 160 * g.K, _testPress.Y + 330 * g.K, false);
+                    break;
+                }
+            case "liftcopy": _testForceCopy = true; TestAction("liftstart"); _testForceCopy = false; break;
+            case "liftend": CanvasUp(); break;
+            case "liftesc": CancelLift(); break;
+            case "dumpsel": File.WriteAllText(Path.Combine(Services.Settings.DataDirectory, "previewsel.txt"), $"sel={_sel.Kind} {_sel.R} drag={_drag} lifted={_lifted} undo={_undo.Count} change={_change}"); break;
+            default:
+                if ((what ?? "").StartsWith("dropinto:"))
+                {
+                    // the selection dragged out of this window and dropped on the middle of another Preview window
+                    var target = All.FirstOrDefault(w => w.Title == what[9..]);
+                    var data = SelectionDragData(_sel, _sel.R.X + _sel.R.Width / 2.0, _sel.R.Y + _sel.R.Height / 2.0, out _, out _);
+                    if (target != null && data != null) target.DropPictures(data, new Point(target._canvas.ActualWidth / 2, target._canvas.ActualHeight * 0.6));
+                }
+                break;
             case "droptest":
                 // (drops the test picture itself onto the middle of the picture area)
                 DropPictures(new DataObject(DataFormats.FileDrop, new[] { _path }), new Point(_canvas.ActualWidth * 0.3, _canvas.ActualHeight * 0.6));
