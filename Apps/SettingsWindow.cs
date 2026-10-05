@@ -562,6 +562,9 @@ public class SettingsWindow : MacWindow
             Row("macOS", Txt($"{MachineInfo.OsName} {MachineInfo.OsVersion}", 12, brush: "SecondaryLabelBrush")));
         SectionTitle("Login Items");
         Group(Row("Open MacShell at login", Switch(LoginItem.Enabled, v => Task.Run(() => LoginItem.Set(v))), "MacShell takes over the desktop every time you sign in"));
+        var check = new Button { Content = "Check Now", Style = (Style)Application.Current.Resources["MacButton"], MinWidth = 0 };
+        check.Click += (_, _) => _ = Updater.CheckAsync(userInitiated: true);
+        Group(Row($"MacShell {Updater.VersionText}", check, string.IsNullOrEmpty(Updater.Status) ? "Updates come from GitHub" : Updater.Status));
         Group(
             Row("Software Update", MakeLink("Windows Update…", "ms-settings:windowsupdate")),
             Row("Storage", MakeLink("Manage…", "ms-settings:storagesense")),

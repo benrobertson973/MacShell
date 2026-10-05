@@ -20,7 +20,7 @@ public static class LoginItem
 
     static string ExePath => Environment.ProcessPath;
 
-    /// <summary>On startup: move an old Run-key entry to the task, and repoint the task if MacShell.exe moved.</summary>
+    /// <summary>On startup: move an old Run-key entry to the task, and repoint the task if its exe is gone.</summary>
     public static void Initialize()
     {
         bool runKey = HasRunKey();
@@ -30,7 +30,9 @@ public static class LoginItem
             string taskExe = QueryTaskExe();
             if (taskExe != null) Enabled = true;
             if (!Enabled) return;
-            if (taskExe == null || !string.Equals(taskExe, ExePath, StringComparison.OrdinalIgnoreCase))
+            // (re)create only when missing or pointing at an exe that no longer exists — a second copy run from
+            // another folder (a test build) must not steal the login task
+            if (taskExe == null || taskExe.Length == 0 || !File.Exists(taskExe))
             {
                 if (!CreateTask()) return;   // keep the Run key if the task can't be made
             }

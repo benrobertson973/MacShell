@@ -1,0 +1,34 @@
+# Pushing a tag like v1.1.0 builds MacShell.exe and publishes it as a GitHub release.
+# Installed copies of MacShell (release builds) check the latest release and update themselves.
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Build MacShell.exe
+        shell: pwsh
+        run: |
+          $version = '${{ github.ref_name }}'.TrimStart('v')
+          dotnet publish MacShell.csproj -c Release -r win-x64 --self-contained false `
+            -p:PublishSingleFile=true -p:Version=$version -p:UpdateChannel=release -o out
+
+      - name: Publish the release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create '${{ github.ref_name }}' out/MacShell.exe --title 'MacShell ${{ github.ref_name }}' --notes-from-tag

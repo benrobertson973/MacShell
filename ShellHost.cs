@@ -69,6 +69,7 @@ public static class ShellHost
         WindowTracker.Start();
         WindowTracker.ForegroundChanged += CheckFullscreen;
         Badges.Start();
+        Updater.Start();
 
         _hook = new KeyboardHook(UI)
         {
@@ -205,6 +206,9 @@ public static class ShellHost
             case "menuclose": MenuBar?.OpenMenu(-1); break;
             case "offscreen": Offscreen = arg == "on"; break;
             case "delay": { var t = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3) }; t.Tick += (_, _) => { t.Stop(); RunCommand(arg); }; t.Start(); break; }
+            case "checkupdate": _ = Updater.CheckAsync(userInitiated: true); break;
+            case "updaterestart": if (Updater.Staged != null) Updater.Restart(); break;
+            case "dumpversion": File.WriteAllText(Path.Combine(Settings.DataDirectory, "version.txt"), $"{Updater.VersionText} release={Updater.IsReleaseBuild} exe={Environment.ProcessPath}"); break;
             case "tray": if (arg == "on") TrayHost.Start(MenuBar.TrayIconRect); else TrayHost.Stop(); break;
             case "trayclick":   // diagnostics: trayclick:<pid>[:right]
                 {

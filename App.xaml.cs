@@ -29,6 +29,13 @@ public partial class App : Application
             return;
         }
 
+        // after an update the new exe is started by the old one: wait until the old one has fully quit
+        int waitIdx = Array.IndexOf(args, "--wait-for");
+        if (waitIdx >= 0 && waitIdx + 1 < args.Length && int.TryParse(args[waitIdx + 1], out int oldPid))
+        {
+            try { System.Diagnostics.Process.GetProcessById(oldPid).WaitForExit(20000); } catch { }
+        }
+
         int openIdx = Array.IndexOf(args, "--open");
         string openCmd = openIdx >= 0 && openIdx + 1 < e.Args.Length ? e.Args[openIdx + 1] : null;
 
