@@ -533,7 +533,7 @@ public class SettingsWindow : MacWindow
             {
                 Settings.Current.TimerSound = CountdownTimer.Sounds[i]; Save();
                 CountdownTimer.Preview(CountdownTimer.Sounds[i]);
-            }), "Click 00:00 in the menu bar to set a timer, or an alarm for a time of day"));
+            }), "Click 00:00 in the menu bar, then type 5:00 for 5 minutes, or a time like 5:30pm"));
     }
 
     /// <summary>A "show in the menu bar" switch for one menu bar item (an app's: with its icon).</summary>

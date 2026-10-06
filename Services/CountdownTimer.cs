@@ -144,6 +144,74 @@ public static class CountdownTimer
     public static void Repeat() => Start(Duration);
 
     /// <summary>
+    /// What was typed in the timer's field. Without AM/PM it's a length of time: "5:00" (5 minutes), "1:30:00", "5"
+    /// (minutes), "90 sec", "1h 30m", "1h30". With AM/PM (or "noon", "midnight", "at …") it's a time of day to ring at:
+    /// "5:30pm", "5:30 am", "7a" - then <paramref name="at"/> is set.
+    /// </summary>
+    public static bool TryParse(string text, DateTime now, out TimeSpan length, out DateTime? at)
+    {
+        length = TimeSpan.Zero;
+        at = null;
+        if (string.IsNullOrWhiteSpace(text)) return false;
+        string t = Regex.Replace(text.Trim().ToLowerInvariant(), @"(?<=[a-z])\.|\.(?=[a-z])", "");   // ("p.m." → "pm"; "2.5" stays)
+        bool atTime = t.StartsWith("at ");
+        if (atTime) t = t[3..].Trim();
+        if (atTime || t is "noon" or "midday" or "midnight" || Regex.IsMatch(t, @"\d\s*(am|pm|a|p)$"))
+        {
+            if (!TryParseTimeOfDay(t, now, Settings.Current.Clock24Hour, out var when)) return false;
+            at = when;
+            length = when - now;
+            return true;
+        }
+        double seconds;
+        var colon = Regex.Match(t, @"^(\d+):(\d{1,2})(?::(\d{1,2}))?$");
+        if (colon.Success)
+        {
+            // m:ss, or h:mm:ss
+            int a = int.Parse(colon.Groups[1].Value), b = int.Parse(colon.Groups[2].Value);
+            if (colon.Groups[3].Success)
+            {
+                int c = int.Parse(colon.Groups[3].Value);
+                if (b > 59 || c > 59) return false;
+                seconds = a * 3600 + b * 60 + c;
+            }
+            else
+            {
+                if (b > 59) return false;
+                seconds = a * 60 + b;
+            }
+        }
+        else
+        {
+            // "5", "2.5", "90 sec", "1 hr 15 min", "1h30" (a number without a unit: minutes - or after hours, minutes;
+            // after minutes, seconds)
+            string compact = Regex.Replace(t, @"[\s,]+|and", "");
+            var parts = Regex.Matches(compact, @"(\d+(?:\.\d+)?)([a-z]*)");
+            if (parts.Count == 0 || parts.Sum(p => p.Length) != compact.Length) return false;
+            seconds = 0;
+            string last = null;
+            foreach (Match p in parts)
+            {
+                double n = double.Parse(p.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture);
+                string unit = p.Groups[2].Value switch
+                {
+                    "" => last switch { "h" => "m", "m" => "s", _ => "m" },
+                    "h" or "hr" or "hrs" or "hour" or "hours" => "h",
+                    "m" or "min" or "mins" or "minute" or "minutes" => "m",
+                    "s" or "sec" or "secs" or "second" or "seconds" => "s",
+                    _ => null,
+                };
+                if (unit == null) return false;
+                seconds += n * (unit == "h" ? 3600 : unit == "m" ? 60 : 1);
+                last = unit;
+            }
+        }
+        if (seconds < 1 || seconds >= 100 * 3600) return false;
+        length = TimeSpan.FromSeconds(Math.Round(seconds));
+        return true;
+    }
+
+    /// <summary>
     /// A time of day typed for an alarm, as its next occurrence after <paramref name="now"/>: "4:30 PM", "4:30pm", "4pm",
     /// "4p", "430pm", "16:30", "noon", "midnight". Without AM/PM, "4:30" is whichever 4:30 comes first (with a 24-hour
     /// clock: 04:30).

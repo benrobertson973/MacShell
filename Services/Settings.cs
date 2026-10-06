@@ -75,10 +75,8 @@ public class AppSettings
     public double? TimerPausedSeconds { get; set; }
     /// <summary>The running timer rings at a time of day (an alarm) rather than after a length of time.</summary>
     public bool TimerIsAlarm { get; set; }
-    /// <summary>The timer's drop-down shows "timer" (a length of time) or "alarm" (a time of day).</summary>
-    public string TimerMode { get; set; } = "timer";
-    /// <summary>The time last typed for an alarm ("4:30 PM").</summary>
-    public string TimerAlarmText { get; set; } = "";
+    /// <summary>What was last typed in the timer's field ("5:00", "5:30pm"): offered again next time.</summary>
+    public string TimerText { get; set; } = "5:00";
     /// <summary>The alarm played when the timer ends: a sound in Windows\Media (without ".wav").</summary>
     public string TimerSound { get; set; } = "Alarm01";
 }
