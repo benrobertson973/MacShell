@@ -17,7 +17,7 @@ namespace MacShell.Shell;
 
 public class DockItem
 {
-    public string Kind;          // app | finder | launchpad | settings | sep | downloads | trash
+    public string Kind;          // app | finder | launchpad | settings | sep | recents | trash
     public string Target;
     public string ExePath;
     public string Key;
@@ -204,7 +204,7 @@ public class DockWindow : Window
             list.Add(item);
         }
         list.Add(Get("sep:1", () => new DockItem { Kind = "sep" }));
-        list.Add(Get("internal:downloads", () => new DockItem { Kind = "downloads", Name = "Downloads", Icon = MacIcons.Folder("arrow.down.circle"), IconIsVector = true, Pinned = true }));
+        list.Add(Get("internal:recents", () => new DockItem { Kind = "recents", Name = "Recents", Icon = MacIcons.Folder("clock"), IconIsVector = true, Pinned = true }));
         var trash = Get("internal:trash", () => new DockItem { Kind = "trash", Name = "Trash", Icon = MacIcons.Trash(_trashFull), IconIsVector = true, Pinned = true });
         list.Add(trash);
 
@@ -272,7 +272,7 @@ public class DockWindow : Window
             case "launchpad": LaunchpadWindow.Toggle(); return;
             case "settings": SettingsWindow.ShowPane(null); return;
             case "trash": ShellHost.OpenFinder(FinderLocation.Trash); return;
-            case "downloads": StackPopup.Show(this, it, GetKnownFolder(FOLDERID_Downloads)); return;
+            case "recents": StackPopup.ShowRecents(this, it); return;
         }
         var running = it.Running != null ? WindowTracker.FindByKey(it.Running.Key) ?? it.Running : null;
         if (running != null && running.Windows.Count > 0)
@@ -285,6 +285,13 @@ public class DockWindow : Window
             it.BounceStart = Environment.TickCount64 / 1000.0;
             _surface.Kick();
         }
+    }
+
+    /// <summary>Diagnostics (--open dockrecents): the Recents stack, as clicking it opens it (window "Recents Stack").</summary>
+    public void TestRecents()
+    {
+        var it = _items.FirstOrDefault(i => i.Kind == "recents");
+        if (it != null) Click(it);
     }
 
     void ShowMenu(DockItem it, Rect iconRect)
@@ -305,9 +312,8 @@ public class DockWindow : Window
                 Mb.Add(cm.Items, Mb.Sep());
                 Mb.Add(cm.Items, Mb.Item("Empty Trash", () => FileOps.EmptyTrash(), enabled: _trashFull));
                 break;
-            case "downloads":
-                string dl = GetKnownFolder(FOLDERID_Downloads);
-                Mb.Add(cm.Items, Mb.Item("Open “Downloads”", () => ShellHost.OpenFinder(dl)));
+            case "recents":
+                Mb.Add(cm.Items, Mb.Item("Open “Recents”", () => ShellHost.OpenFinder(FinderLocation.Recents)));
                 break;
             case "launchpad":
                 Mb.Add(cm.Items, Mb.Item("Open", LaunchpadWindow.Toggle));
@@ -847,7 +853,7 @@ public class DockWindow : Window
                 if (e.Data.GetDataPresent(DataFormats.FileDrop) && hit != null)
                 {
                     if (hit.Kind == "trash") e.Effects = DragDropEffects.Move;
-                    else if (hit.Kind is "app" or "downloads" or "finder") e.Effects = DragDropEffects.Copy;
+                    else if (hit.Kind is "app" or "finder") e.Effects = DragDropEffects.Copy;
                 }
             }
             e.Handled = true;
@@ -874,7 +880,6 @@ public class DockWindow : Window
             switch (hit.Kind)
             {
                 case "trash": FileOps.MoveToTrash(files); break;
-                case "downloads": FileOps.CopyOrMove(files, GetKnownFolder(FOLDERID_Downloads), move: true); break;
                 case "finder": foreach (var f in files) ShellHost.RevealInFinder(f); break;
                 case "app" when hit.Target == Apps.Preview.PreviewWindow.AppId:
                     foreach (var f in files.Where(Apps.Preview.PvFile.IsImage)) Apps.Preview.PreviewWindow.Open(f);
@@ -1012,24 +1017,34 @@ public class DockWindow : Window
         }
     }
 
-    // ================================================================== Downloads stack
+    // ================================================================== Recents stack
 
-    /// <summary>Grid-style stack popover showing the newest items of a folder.</summary>
+    /// <summary>Grid-style stack popover showing the most recent files: Finder's Recents, newest first.</summary>
     public static class StackPopup
     {
         static Window _win;
+        static bool _loading;
         public static bool IsOpen => _win != null;
 
-        public static void Show(DockWindow dock, DockItem item, string folder)
+        public static void ShowRecents(DockWindow dock, DockItem item)
         {
             if (_win != null) { _win.Close(); return; }
-            if (folder == null || !Directory.Exists(folder)) return;
-            var entries = new DirectoryInfo(folder).EnumerateFileSystemInfos()
-                .Where(f => (f.Attributes & (FileAttributes.Hidden | FileAttributes.System)) == 0)
-                .OrderByDescending(f => f.CreationTime > f.LastWriteTime ? f.CreationTime : f.LastWriteTime).Take(16).ToList();
+            if (_loading) return;
+            _loading = true;
+            Task.Run(() => FinderWindow.LoadRecents(CancellationToken.None)).ContinueWith(t =>
+            {
+                _loading = false;
+                // (the order Finder's Recents shows: Date Modified, newest first)
+                var entries = (t.IsCompletedSuccessfully ? t.Result : new List<FileItem>()).OrderByDescending(f => f.Modified).Take(16).ToList();
+                Show(dock, item, "Recents", entries, FinderLocation.Recents);
+            }, TaskScheduler.FromCurrentSynchronizationContext());
+        }
 
+        static void Show(DockWindow dock, DockItem item, string title, List<FileItem> entries, string finderLocation)
+        {
             var w = new Window
             {
+                Title = title + " Stack",
                 WindowStyle = WindowStyle.None, AllowsTransparency = true, Background = Brushes.Transparent, Topmost = true,
                 ShowInTaskbar = false, ResizeMode = ResizeMode.NoResize, SizeToContent = SizeToContent.WidthAndHeight,
                 FontFamily = Theme.Font, FontSize = 12,
@@ -1044,7 +1059,7 @@ public class DockWindow : Window
             outer.SetResourceReference(Border.BackgroundProperty, "PopoverBackgroundBrush");
             outer.SetResourceReference(Border.BorderBrushProperty, "MenuBorderBrush");
             var stack = new StackPanel();
-            var header = new TextBlock { Text = Path.GetFileName(folder.TrimEnd('\\')), FontSize = 15, FontWeight = FontWeights.SemiBold, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 0, 0, 10) };
+            var header = new TextBlock { Text = title, FontSize = 15, FontWeight = FontWeights.SemiBold, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 0, 0, 10) };
             header.SetResourceReference(TextBlock.ForegroundProperty, "LabelBrush");
             stack.Children.Add(header);
             var grid = new WrapPanel { Width = 4 * 92 };
@@ -1052,12 +1067,12 @@ public class DockWindow : Window
             {
                 var cell = new StackPanel { Width = 92, Margin = new Thickness(0, 0, 0, 8), Background = Brushes.Transparent, Cursor = Cursors.Hand };
                 var img = new Image { Width = 56, Height = 56, Margin = new Thickness(0, 0, 0, 4) };
-                if (f is DirectoryInfo) img.Source = MacIcons.Folder(MacIcons.FolderGlyphFor(f.FullName));
-                else ShellIcons.Load(f.FullName, 128, ShellIcons.IsThumbnailType(f.FullName), b => img.Source = b ?? MacIcons.GenericDocument);
+                if (f.IsFolder) img.Source = MacIcons.Folder(MacIcons.FolderGlyphFor(f.FullPath));
+                else ShellIcons.Load(f.FullPath, 128, ShellIcons.IsThumbnailType(f.FullPath), b => img.Source = b ?? MacIcons.GenericDocument);
                 var name = new TextBlock { Text = f.Name, TextAlignment = TextAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis, MaxWidth = 86, TextWrapping = TextWrapping.Wrap, MaxHeight = 32 };
                 name.SetResourceReference(TextBlock.ForegroundProperty, "LabelBrush");
                 cell.Children.Add(img); cell.Children.Add(name);
-                string path = f.FullName;
+                string path = f.FullPath;
                 cell.MouseLeftButtonUp += (_, _) => { w.Close(); AppCatalog.OpenFile(path); };
                 cell.MouseMove += (_, e) =>
                 {
@@ -1069,7 +1084,7 @@ public class DockWindow : Window
             if (entries.Count == 0) grid.Children.Add(new TextBlock { Text = "No Items", Margin = new Thickness(0, 20, 0, 20), Opacity = 0.5, Width = 4 * 92, TextAlignment = TextAlignment.Center });
             stack.Children.Add(grid);
             var open = new Button { Content = "Open in Finder", Style = (Style)Application.Current.Resources["MacButton"], HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 4, 0, 0) };
-            open.Click += (_, _) => { w.Close(); ShellHost.OpenFinder(folder); };
+            open.Click += (_, _) => { w.Close(); ShellHost.OpenFinder(finderLocation); };
             stack.Children.Add(open);
             outer.Child = stack;
             w.Content = outer;

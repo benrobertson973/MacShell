@@ -852,7 +852,7 @@ public partial class FinderWindow : MacWindow, IFinderHost
         catch (Exception ex) { return (null, ex.Message); }
     }
 
-    static List<FileItem> LoadRecents(CancellationToken ct)
+    internal static List<FileItem> LoadRecents(CancellationToken ct)
     {
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var result = new List<(FileItem item, DateTime when)>();

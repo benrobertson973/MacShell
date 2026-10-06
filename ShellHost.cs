@@ -243,6 +243,7 @@ public static class ShellHost
                     cm.IsOpen = true;
                     break;
                 }
+            case "dockrecents": Dock?.TestRecents(); break;
             case "webdroptest":   // diagnostics: webdroptest:<folder> - a virtual-file drag and a link-only drag, saved into <folder>
                 {
                     var png = File.ReadAllBytes(Path.Combine(arg, "..", "pvtest-orig.png"));
