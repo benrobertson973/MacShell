@@ -505,6 +505,20 @@ public class SettingsWindow : MacWindow
     void BuildControlCenter()
     {
         var s = Settings.Current;
+        SectionTitle("Menu Bar");
+        Group(
+            MenuBarRow("Timer", "timer"),
+            MenuBarRow("Battery", "battery"),
+            MenuBarRow("Wi‑Fi", "wifi"),
+            MenuBarRow("Sound", "sound"),
+            MenuBarRow("Spotlight", "spotlight"));
+        SectionTitle("App Icons in the Menu Bar");
+        var apps = Shell.MenuBarWindow.TrayApps();
+        if (apps.Count == 0) Group(Row("No app icons right now", null, "Apps running in the background show their icons in the menu bar"));
+        else Group(apps.Select(a => MenuBarRow(a.name, a.key, a.image)).ToArray());
+        var tip = Txt("Tip: hold Alt and drag an icon out of the menu bar to take it out.", 11, brush: "SecondaryLabelBrush");
+        tip.Margin = new Thickness(4, -4, 0, 4);
+        _content.Children.Add(tip);
         SectionTitle("Clock");
         Group(
             Row("Show date", Switch(s.ClockShowDate, v => { Settings.Current.ClockShowDate = v; Save(); })),
@@ -513,6 +527,31 @@ public class SettingsWindow : MacWindow
             Row("Display the time with seconds", Switch(s.ClockShowSeconds, v => { Settings.Current.ClockShowSeconds = v; Save(); })));
         SectionTitle("Battery");
         Group(Row("Show Percentage", Switch(s.ShowBatteryPercent, v => { Settings.Current.ShowBatteryPercent = v; Save(); })));
+        SectionTitle("Timer");
+        Group(
+            Row("When the timer ends", PopUp(CountdownTimer.Sounds.Select(CountdownTimer.SoundName).ToArray(), Math.Max(0, Array.IndexOf(CountdownTimer.Sounds, s.TimerSound)), i =>
+            {
+                Settings.Current.TimerSound = CountdownTimer.Sounds[i]; Save();
+                CountdownTimer.Preview(CountdownTimer.Sounds[i]);
+            }), "Click 00:00 in the menu bar to set a timer, or an alarm for a time of day"));
+    }
+
+    /// <summary>A "show in the menu bar" switch for one menu bar item (an app's: with its icon).</summary>
+    static FrameworkElement MenuBarRow(string name, string key, ImageSource icon = null)
+    {
+        var row = (Grid)Row(name, Switch(!Shell.MenuBarWindow.IsHidden(key), v => Shell.MenuBarWindow.SetHidden(key, name, !v)));
+        if (icon != null && row.Children[0] is StackPanel left)
+        {
+            var img = new Image { Source = icon, Width = 16, Height = 16, Margin = new Thickness(0, 0, 9, 0), VerticalAlignment = VerticalAlignment.Center };
+            RenderOptions.SetBitmapScalingMode(img, BitmapScalingMode.HighQuality);
+            var label = (UIElement)left.Children[0];
+            left.Children.RemoveAt(0);
+            var line = new StackPanel { Orientation = Orientation.Horizontal };
+            line.Children.Add(img);
+            line.Children.Add(label);
+            left.Children.Insert(0, line);
+        }
+        return row;
     }
 
     void BuildSpotlight()

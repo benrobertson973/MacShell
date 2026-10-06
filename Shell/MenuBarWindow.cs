@@ -24,8 +24,9 @@ public class MenuBarWindow : Window
     readonly Menu _menu = new() { VerticalAlignment = VerticalAlignment.Stretch };
     readonly StackPanel _right = new() { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 0, 8, 0) };
     readonly TextBlock _clock = new() { VerticalAlignment = VerticalAlignment.Center };
+    readonly TextBlock _timerText = new() { VerticalAlignment = VerticalAlignment.Center };
     readonly SolidColorBrush _text = new(Colors.Black);
-    StatusButton _ccButton, _clockButton, _wifiButton, _batteryButton;
+    StatusButton _ccButton, _clockButton, _wifiButton, _batteryButton, _timerButton, _soundButton, _searchButton;
     BatteryIcon _battery;
     TextBlock _batteryPct;
     SymbolIcon _wifiIcon, _soundIcon;
@@ -81,6 +82,8 @@ public class MenuBarWindow : Window
         Theme.Changed += () => { ApplyAppearance(); RebuildMenus(); };
         WindowTracker.ActiveAppChanged += RebuildMenus;
         Settings.Changed += UpdateClock;
+        Settings.Changed += ApplyHidden;
+        CountdownTimer.Changed += UpdateTimer;
         TrayHost.Changed += RebuildTrayIcons;
 
         var timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
@@ -92,7 +95,7 @@ public class MenuBarWindow : Window
         NetworkChange.NetworkAvailabilityChanged += (_, _) => Dispatcher.BeginInvoke(UpdateStatus);
         NetworkChange.NetworkAddressChanged += (_, _) => Dispatcher.BeginInvoke(UpdateStatus);
         UpdateClock();
-        UpdateStatus();
+        ApplyHidden();   // (also the timer, battery and network items)
 
         SourceInitialized += (_, _) =>
         {
@@ -139,25 +142,36 @@ public class MenuBarWindow : Window
     void BuildStatusItems()
     {
         _right.Children.Clear();
+        // the timer: "00:00", counting down once set; a click while its alarm rings stops it
+        _timerText.Foreground = _text;
+        System.Windows.Documents.Typography.SetNumeralAlignment(_timerText, FontNumeralAlignment.Tabular);
+        _timerButton = new StatusButton(_timerText, b =>
+        {
+            if (CountdownTimer.Status == CountdownTimer.State.Ringing) CountdownTimer.Cancel();
+            else TimerPopover.Toggle(b);
+        }) { HideKey = "timer", HideName = "Timer" };
+        _right.Children.Add(_timerButton);
         _right.Children.Add(_trayPanel);
 
         _battery = new BatteryIcon { Foreground = _text, VerticalAlignment = VerticalAlignment.Center };
         _batteryPct = new TextBlock { Foreground = _text, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 5, 0), FontSize = 12 };
         var bp = new StackPanel { Orientation = Orientation.Horizontal };
         bp.Children.Add(_batteryPct); bp.Children.Add(_battery);
-        _batteryButton = new StatusButton(bp, b => ControlCenterWindow.ShowBattery(b));
+        _batteryButton = new StatusButton(bp, b => ControlCenterWindow.ShowBattery(b)) { HideKey = "battery", HideName = "Battery" };
         _right.Children.Add(_batteryButton);
 
         _wifiIcon = new SymbolIcon { Symbol = "wifi", Width = 17, Height = 17, StrokeWidth = 2.0, Foreground = _text };
-        _wifiButton = new StatusButton(_wifiIcon, _ => OpenUri("ms-availablenetworks:"));
+        _wifiButton = new StatusButton(_wifiIcon, _ => OpenUri("ms-availablenetworks:")) { HideKey = "wifi", HideName = "Wi‑Fi" };
         _right.Children.Add(_wifiButton);
 
         _soundIcon = new SymbolIcon { Symbol = "speaker", Width = 17, Height = 17, StrokeWidth = 1.9, Foreground = _text };
-        _right.Children.Add(new StatusButton(_soundIcon, b => SoundPopover.Toggle(b)));
+        _soundButton = new StatusButton(_soundIcon, b => SoundPopover.Toggle(b)) { HideKey = "sound", HideName = "Sound" };
+        _right.Children.Add(_soundButton);
         UpdateSoundIcon();
 
         var search = new SymbolIcon { Symbol = "magnifyingglass", Width = 15, Height = 15, StrokeWidth = 2.1, Foreground = _text };
-        _right.Children.Add(new StatusButton(search, _ => SpotlightWindow.Toggle()));
+        _searchButton = new StatusButton(search, _ => SpotlightWindow.Toggle()) { HideKey = "spotlight", HideName = "Spotlight" };
+        _right.Children.Add(_searchButton);
 
         var cc = new SymbolIcon { Symbol = "controlcenter", Width = 16, Height = 16, StrokeWidth = 1.8, Foreground = _text };
         _ccButton = new StatusButton(cc, b => ControlCenterWindow.Toggle(b));
@@ -173,10 +187,10 @@ public class MenuBarWindow : Window
     readonly StackPanel _trayPanel = new() { Orientation = Orientation.Horizontal };
     readonly Dictionary<string, TrayButton> _trayButtons = new();
 
-    /// <summary>Newest icon leftmost, as macOS adds menu extras; hidden (NIS_HIDDEN) and icon-less ones skipped.</summary>
+    /// <summary>Newest icon leftmost, as macOS adds menu extras; hidden (NIS_HIDDEN), icon-less and taken-out ones skipped.</summary>
     void RebuildTrayIcons()
     {
-        var shown = TrayHost.Icons.Where(i => !i.Hidden && i.Image != null).OrderByDescending(i => i.Order).ToList();
+        var shown = TrayHost.Icons.Where(i => !i.Hidden && i.Image != null && !IsHidden(TrayApp(i).key)).OrderByDescending(i => i.Order).ToList();
         var keep = new HashSet<string>(shown.Select(i => i.Key));
         foreach (var k in _trayButtons.Keys.Where(k => !keep.Contains(k)).ToList()) _trayButtons.Remove(k);
         _trayPanel.Children.Clear();
@@ -216,10 +230,22 @@ public class MenuBarWindow : Window
             MouseLeftButtonDown += (_, e) =>
             {
                 e.Handled = true;
+                if (_icon != null && MenuExtraDrag.ModifierHeld)
+                {
+                    var (key, name) = TrayApp(_icon);
+                    MenuExtraDrag.Begin(this, key, name);
+                    return;
+                }
                 Press(true);
                 if (e.ClickCount == 2) Send(false, true);
             };
-            MouseLeftButtonUp += (_, e) => { e.Handled = true; Press(false); if (e.ClickCount < 2) Send(false, false); };
+            MouseLeftButtonUp += (_, e) =>
+            {
+                e.Handled = true;
+                if (MenuExtraDrag.Active) return;   // (an Alt-drag, not a click for the app)
+                Press(false);
+                if (e.ClickCount < 2) Send(false, false);
+            };
             MouseRightButtonDown += (_, e) => { e.Handled = true; Press(true); };
             MouseRightButtonUp += (_, e) => { e.Handled = true; Press(false); Send(true, false); };
             MouseLeave += (_, _) => Press(false);
@@ -260,6 +286,190 @@ public class MenuBarWindow : Window
         _clock.Text = date.Length > 0 ? date + "  " + time : time;
     }
 
+    void UpdateTimer()
+    {
+        if (_timerButton == null) return;
+        _timerButton.Visibility = IsHidden("timer") ? Visibility.Collapsed : Visibility.Visible;
+        _timerText.Text = CountdownTimer.Text;
+        _timerText.Opacity = CountdownTimer.Status == CountdownTimer.State.Paused ? 0.55 : 1;
+        if (!TimerPopover.IsOpen) _timerButton.Active = CountdownTimer.Flash;   // (flashes while the alarm rings)
+    }
+
+    /// <summary>Diagnostics (--open timerpop): the timer's drop-down, as clicking "00:00" opens it.</summary>
+    public void ToggleTimerPopover() => TimerPopover.Toggle(_timerButton);
+
+    // ------------------------------------------------------------------ taking items out of the menu bar
+
+    /// <summary>Items can be taken out of the menu bar (Settings › Control Center, or Alt-drag them out, like ⌘-drag
+    /// on a Mac): the timer, battery, Wi-Fi, sound and Spotlight items, and apps' icons ("app:&lt;exe name&gt;").</summary>
+    public static bool IsHidden(string key) => key != null && Settings.Current.MenuBarHidden.ContainsKey(key);
+
+    public static void SetHidden(string key, string name, bool hidden)
+    {
+        if (key == null || IsHidden(key) == hidden) return;
+        if (hidden) Settings.Current.MenuBarHidden[key] = name ?? key;
+        else Settings.Current.MenuBarHidden.Remove(key);
+        Settings.Save();
+    }
+
+    void ApplyHidden()
+    {
+        if (_wifiButton == null) return;
+        _wifiButton.Visibility = IsHidden("wifi") ? Visibility.Collapsed : Visibility.Visible;
+        _soundButton.Visibility = IsHidden("sound") ? Visibility.Collapsed : Visibility.Visible;
+        _searchButton.Visibility = IsHidden("spotlight") ? Visibility.Collapsed : Visibility.Visible;
+        UpdateTimer();
+        UpdateStatus();
+        RebuildTrayIcons();
+    }
+
+    static readonly Dictionary<int, string> _trayPaths = new();
+
+    /// <summary>The app a tray icon belongs to: "app:&lt;exe file name&gt;" and its name (the exe's description). Windows'
+    /// own icons (all explorer.exe's) are told apart: "app:explorer.exe#&lt;icon&gt;", named by their tooltip.</summary>
+    public static (string key, string name) TrayApp(TrayIcon icon)
+    {
+        string path = null;
+        if (icon.ProcessId > 0 && !_trayPaths.TryGetValue(icon.ProcessId, out path))
+        {
+            path = GetProcessPath((uint)icon.ProcessId);
+            if (path != null) _trayPaths[icon.ProcessId] = path;
+        }
+        string tip = (icon.Tip ?? "").Split('\n')[0].Trim();
+        if (path == null) return ("tip:" + tip.ToLowerInvariant(), tip.Length > 0 ? tip : "App");
+        string exe = System.IO.Path.GetFileName(path).ToLowerInvariant();
+        if (exe == "explorer.exe")
+            return ($"app:explorer.exe#{(icon.Guid != Guid.Empty ? icon.Guid.ToString() : icon.UID.ToString())}", tip.Length > 0 ? tip : "Windows");
+        string name = null;
+        try { name = System.Diagnostics.FileVersionInfo.GetVersionInfo(path).FileDescription?.Trim(); } catch { }
+        if (string.IsNullOrEmpty(name)) name = tip;
+        if (string.IsNullOrEmpty(name)) name = System.IO.Path.GetFileNameWithoutExtension(path);
+        return ("app:" + exe, name);
+    }
+
+    /// <summary>For Settings: the apps with icons in the menu bar now, and those taken out of it.</summary>
+    public static List<(string key, string name, ImageSource image)> TrayApps()
+    {
+        var list = new List<(string key, string name, ImageSource image)>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var icon in TrayHost.Icons.Where(i => !i.Hidden && i.Image != null).OrderByDescending(i => i.Order))
+        {
+            var (key, name) = TrayApp(icon);
+            if (seen.Add(key)) list.Add((key, name, icon.Image));
+        }
+        foreach (var (key, name) in Settings.Current.MenuBarHidden)
+        {
+            bool app = key.StartsWith("app:") || key.StartsWith("tip:");
+            if (app && seen.Add(key)) list.Add((key, name, null));
+        }
+        return list;
+    }
+
+    /// <summary>
+    /// Alt-drag (or Ctrl-drag) an item out of the menu bar to take it out, like ⌘-drag on a Mac: a copy of it follows
+    /// the pointer, with an ✕ once it's far enough below the menu bar; let go there and it's gone (Settings › Control
+    /// Center brings it back). Let go anywhere else and nothing changes.
+    /// </summary>
+    static class MenuExtraDrag
+    {
+        const int VK_LBUTTON = 0x01, VK_RBUTTON = 0x02, VK_CONTROL = 0x11, VK_MENU = 0x12;
+        public static bool Active { get; private set; }
+        public static bool ModifierHeld => (GetAsyncKeyState(VK_MENU) & 0x8000) != 0 || (GetAsyncKeyState(VK_CONTROL) & 0x8000) != 0;
+
+        public static void Begin(FrameworkElement item, string key, string name)
+        {
+            if (Active || key == null || item.ActualWidth < 1) return;
+            Active = true;
+            GetCursorPos(out var start);
+            var tl = item.PointToScreen(new Point(0, 0));
+            int grabX = start.X - (int)tl.X, grabY = start.Y - (int)tl.Y;
+            var ghost = new ItemGhost(item);
+            ghost.Show();
+            ghost.MoveTo(start.X - grabX, start.Y - grabY, false);
+            item.Opacity = 0.3;
+            double s = ShellHost.Scale;
+            int barBottom = (int)Math.Round(ShellHost.ScreenPx.Top + ShellHost.MenuBarHeight * s);
+            int button = SystemParameters.SwapButtons ? VK_RBUTTON : VK_LBUTTON;
+            bool armed = false;
+            var t = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(15) };
+            t.Tick += (_, _) =>
+            {
+                GetCursorPos(out var p);
+                armed = p.Y > barBottom + (int)(22 * s);
+                ghost.MoveTo(p.X - grabX, p.Y - grabY, armed);
+                if ((GetAsyncKeyState(button) & 0x8000) != 0) return;
+                t.Stop();
+                ghost.Close();
+                item.Opacity = 1;
+                Active = false;
+                if (armed) SetHidden(key, name, true);
+            };
+            t.Start();
+        }
+
+        /// <summary>The dragged item: a picture of it on a small pill, click-through, with an ✕ when it will go.</summary>
+        sealed class ItemGhost : Window
+        {
+            readonly Border _x;
+            IntPtr _hwnd;
+
+            public ItemGhost(FrameworkElement item)
+            {
+                WindowStyle = WindowStyle.None;
+                AllowsTransparency = true;
+                Background = Brushes.Transparent;
+                ShowInTaskbar = false;
+                ShowActivated = false;
+                Topmost = true;
+                IsHitTestVisible = false;
+                ResizeMode = ResizeMode.NoResize;
+                SizeToContent = SizeToContent.WidthAndHeight;
+                Left = -10000;
+                Top = -10000;
+                // (a picture taken now, before the item in the menu bar dims)
+                double s = VisualTreeHelper.GetDpi(item).DpiScaleX;
+                var dv = new DrawingVisual();
+                using (var dc = dv.RenderOpen()) dc.DrawRectangle(new VisualBrush(item), null, new Rect(0, 0, item.ActualWidth, item.ActualHeight));
+                var shot = new System.Windows.Media.Imaging.RenderTargetBitmap((int)Math.Ceiling(item.ActualWidth * s), (int)Math.Ceiling(item.ActualHeight * s), 96 * s, 96 * s, PixelFormats.Pbgra32);
+                shot.Render(dv);
+                shot.Freeze();
+                bool dark = Theme.IsDark || Wallpaper.TopIsDark;
+                var pill = new Border
+                {
+                    Width = item.ActualWidth, Height = item.ActualHeight, CornerRadius = new CornerRadius(5),
+                    Background = new SolidColorBrush(dark ? Color.FromArgb(0xB0, 0x2A, 0x2A, 0x2C) : Color.FromArgb(0xD0, 0xF2, 0xF2, 0xF4)),
+                    Child = new Image { Source = shot, Width = item.ActualWidth, Height = item.ActualHeight },
+                };
+                _x = new Border
+                {
+                    Width = 15, Height = 15, CornerRadius = new CornerRadius(7.5), Visibility = Visibility.Hidden,
+                    HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Top,
+                    Background = new SolidColorBrush(Color.FromRgb(0x5A, 0x5A, 0x5E)),
+                    Child = new SymbolIcon { Symbol = "xmark", Width = 8, Height = 8, StrokeWidth = 3, Foreground = Brushes.White },
+                };
+                var grid = new Grid { Margin = new Thickness(0) };
+                pill.Margin = new Thickness(7, 7, 0, 0);
+                grid.Children.Add(pill);
+                grid.Children.Add(_x);
+                Content = grid;
+                SourceInitialized += (_, _) =>
+                {
+                    _hwnd = new WindowInteropHelper(this).Handle;
+                    AddExStyle(_hwnd, WS_EX_TRANSPARENT | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE);
+                };
+            }
+
+            /// <summary>The item's top-left at (x, y) screen pixels.</summary>
+            public void MoveTo(int x, int y, bool armed)
+            {
+                _x.Visibility = armed ? Visibility.Visible : Visibility.Hidden;
+                if (_hwnd == IntPtr.Zero) return;
+                int pad = (int)Math.Round(7 * ShellHost.Scale);
+                SetWindowPos(_hwnd, HWND_TOPMOST, x - pad, y - pad, 0, 0, SWP_NOSIZE | SWP_NOACTIVATE);
+            }
+        }
+    }
+
     /// <summary>Speaker glyph reflects mute and volume level, like the macOS Sound menu extra.</summary>
     public void UpdateSoundIcon()
     {
@@ -272,7 +482,7 @@ public class MenuBarWindow : Window
     {
         GetSystemPowerStatus(out var ps);
         bool hasBattery = ps.BatteryFlag != 128 && ps.BatteryFlag != 255 && ps.BatteryLifePercent <= 100;
-        _batteryButton.Visibility = hasBattery ? Visibility.Visible : Visibility.Collapsed;
+        _batteryButton.Visibility = hasBattery && !IsHidden("battery") ? Visibility.Visible : Visibility.Collapsed;
         if (hasBattery)
         {
             _battery.Level = ps.BatteryLifePercent / 100.0;
@@ -738,6 +948,8 @@ public class MenuBarWindow : Window
     {
         public bool Active { get => _active; set { _active = value; Background = value ? (Brush)FindResource("MenuBarHighlightBrush") : Brushes.Transparent; } }
         bool _active;
+        /// <summary>Set for items that can be taken out of the menu bar (Alt-drag, or Settings).</summary>
+        public string HideKey, HideName;
 
         public StatusButton(UIElement content, Action<StatusButton> click)
         {
@@ -747,7 +959,12 @@ public class MenuBarWindow : Window
             CornerRadius = new CornerRadius(4);
             Background = Brushes.Transparent;
             VerticalAlignment = VerticalAlignment.Stretch;
-            MouseLeftButtonDown += (_, e) => { e.Handled = true; click(this); };
+            MouseLeftButtonDown += (_, e) =>
+            {
+                e.Handled = true;
+                if (HideKey != null && MenuExtraDrag.ModifierHeld) { MenuExtraDrag.Begin(this, HideKey, HideName); return; }
+                click(this);
+            };
         }
 
         /// <summary>Screen position (DIPs) of this item's bottom-right corner.</summary>

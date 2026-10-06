@@ -65,6 +65,22 @@ public class AppSettings
     public bool ReplaceAltTab { get; set; } = true;
     public bool AltSpaceSpotlight { get; set; } = true;
     public bool SoundEffects { get; set; } = true;
+    /// <summary>Menu bar items taken out of the menu bar: "timer", "battery", "wifi", "sound", "spotlight", or an app's
+    /// icons ("app:discord.exe") → the name shown in Settings.</summary>
+    public Dictionary<string, string> MenuBarHidden { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+    /// <summary>The timer's last length in seconds: what the timer offers next time (see Services/CountdownTimer.cs).</summary>
+    public double TimerSeconds { get; set; } = 300;
+    /// <summary>A running timer's end (UTC), or a paused one's time left: a timer survives MacShell restarting.</summary>
+    public DateTime? TimerEndsUtc { get; set; }
+    public double? TimerPausedSeconds { get; set; }
+    /// <summary>The running timer rings at a time of day (an alarm) rather than after a length of time.</summary>
+    public bool TimerIsAlarm { get; set; }
+    /// <summary>The timer's drop-down shows "timer" (a length of time) or "alarm" (a time of day).</summary>
+    public string TimerMode { get; set; } = "timer";
+    /// <summary>The time last typed for an alarm ("4:30 PM").</summary>
+    public string TimerAlarmText { get; set; } = "";
+    /// <summary>The alarm played when the timer ends: a sound in Windows\Media (without ".wav").</summary>
+    public string TimerSound { get; set; } = "Alarm01";
 }
 
 public static class Settings
@@ -90,6 +106,7 @@ public static class Settings
         Current.FolderViews = new(Current.FolderViews ?? new(), StringComparer.OrdinalIgnoreCase);
         Current.Tags = new(Current.Tags ?? new(), StringComparer.OrdinalIgnoreCase);
         Current.DesktopPositions = new(Current.DesktopPositions ?? new(), StringComparer.OrdinalIgnoreCase);
+        Current.MenuBarHidden = new(Current.MenuBarHidden ?? new(), StringComparer.OrdinalIgnoreCase);
         Current.RecentApps ??= new();
         Current.RecentDocs ??= new();
     }

@@ -63,6 +63,8 @@ public static class ShellHost
         MenuBar = new MenuBarWindow();
         MenuBar.Show();
         if (Settings.Current.MenuBarTrayIcons) TrayHost.Start(MenuBar.TrayIconRect);
+        TimerBanner.Install();
+        CountdownTimer.Initialize();   // (a timer still running from before a restart)
         Dock = new DockWindow();
         Dock.Show();
         UpdateWorkArea();
@@ -244,6 +246,35 @@ public static class ShellHost
                     break;
                 }
             case "dockrecents": Dock?.TestRecents(); break;
+            case "timerpop": MenuBar?.ToggleTimerPopover(); break;   // diagnostics: the timer's drop-down
+            case "menubarhide": MenuBarWindow.SetHidden(arg, arg, true); break;    // diagnostics: menubarhide:<key>
+            case "menubarshow": MenuBarWindow.SetHidden(arg, arg, false); break;
+            case "dumpmenubar":   // diagnostics: the menu bar's app icons (keys, names) and what's taken out
+                File.WriteAllLines(Path.Combine(Settings.DataDirectory, "menubar.txt"),
+                    MenuBarWindow.TrayApps().Select(a => $"{a.key} | {a.name} | hidden={MenuBarWindow.IsHidden(a.key)}")
+                        .Concat(Settings.Current.MenuBarHidden.Select(h => $"hidden: {h.Key} = {h.Value}")));
+                break;
+            case "timer":   // diagnostics: timer:<seconds> | at:<time> | parse:<time>|<time>… | pause | resume | cancel | repeat | snooze | dump
+                switch (arg)
+                {
+                    case "pause": CountdownTimer.Pause(); break;
+                    case "resume": CountdownTimer.Resume(); break;
+                    case "cancel": CountdownTimer.Cancel(); break;
+                    case "repeat": CountdownTimer.Repeat(); break;
+                    case "snooze": CountdownTimer.Snooze(); break;
+                    case "dump": File.WriteAllText(Path.Combine(Settings.DataDirectory, "timer.txt"), $"{CountdownTimer.Status} {CountdownTimer.Text} of {CountdownTimer.Duration} rings={CountdownTimer.RingsAt} sound={Settings.Current.TimerSound}"); break;
+                    case { } a when a.StartsWith("mode:"): Settings.Current.TimerMode = a[5..]; Settings.Save(false); break;
+                    case { } a when a.StartsWith("text:"): Settings.Current.TimerAlarmText = a[5..]; Settings.Save(false); break;
+                    case { } a when a.StartsWith("at:"):
+                        if (CountdownTimer.TryParseTimeOfDay(a[3..], DateTime.Now, Settings.Current.Clock24Hour, out var when)) CountdownTimer.StartAt(when);
+                        break;
+                    case { } a when a.StartsWith("parse:"):
+                        File.WriteAllLines(Path.Combine(Settings.DataDirectory, "timer.txt"), a[6..].Split('|').Select(t =>
+                            $"{t} -> " + (CountdownTimer.TryParseTimeOfDay(t, DateTime.Now, Settings.Current.Clock24Hour, out var w) ? w.ToString("ddd HH:mm") : "no")));
+                        break;
+                    default: if (double.TryParse(arg, out double sec)) CountdownTimer.Start(TimeSpan.FromSeconds(sec)); break;
+                }
+                break;
             case "webdroptest":   // diagnostics: webdroptest:<folder> - a virtual-file drag and a link-only drag, saved into <folder>
                 {
                     var png = File.ReadAllBytes(Path.Combine(arg, "..", "pvtest-orig.png"));
