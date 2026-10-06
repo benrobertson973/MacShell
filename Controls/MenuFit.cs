@@ -13,12 +13,16 @@ namespace MacShell.Controls;
 /// opened near the top slid under the menu bar and one near the bottom ran behind the Dock. When a context menu or
 /// a submenu opens, its visible card is measured against the monitor's work area and placed back inside it (at an
 /// absolute position, restored when it closes); a menu taller than the space scrolls. Menus hanging from the menu
-/// bar are only shortened, never moved.
+/// bar, and menus their owner placed itself (a Dock icon's, just above the icon), are only shortened, never moved.
 /// </summary>
 public static class MenuFit
 {
-    sealed class Saved { public PlacementMode Placement; public double H, V; public bool Moved; }
+    sealed class Saved { public PlacementMode Placement; public double H, V; public Rect R; public bool Moved; }
     static readonly ConditionalWeakTable<DependencyObject, Saved> State = new();
+
+    /// <summary>Where a menu is held: nowhere (it can be moved), from its top (the menu bar's menus) or from its bottom
+    /// (a Dock icon's menu, which rises from just above the icon).</summary>
+    enum Hang { Free, FromTop, FromBottom }
 
     public static void Install()
     {
@@ -27,14 +31,16 @@ public static class MenuFit
             if (e.OriginalSource != s) return;
             var cm = (ContextMenu)s;
             var st = State.GetValue(cm, _ => new Saved());
-            if (!st.Moved) { st.Placement = cm.Placement; st.H = cm.HorizontalOffset; st.V = cm.VerticalOffset; }
+            if (!st.Moved) { st.Placement = cm.Placement; st.H = cm.HorizontalOffset; st.V = cm.VerticalOffset; st.R = cm.PlacementRectangle; }
+            var hang = st.Placement == PlacementMode.Custom ? Hang.FromBottom : Hang.Free;
             cm.Dispatcher.BeginInvoke(() => Fit(cm, cm, (x, y) =>
             {
                 st.Moved = true;
                 cm.Placement = PlacementMode.Absolute;
+                cm.PlacementRectangle = Rect.Empty;   // (Absolute would add a placement rectangle's position to the screen's)
                 cm.HorizontalOffset = x;
                 cm.VerticalOffset = y;
-            }, hangsFromBar: false), DispatcherPriority.Loaded);
+            }, hang), DispatcherPriority.Loaded);
         }));
         EventManager.RegisterClassHandler(typeof(ContextMenu), ContextMenu.ClosedEvent, new RoutedEventHandler((s, e) =>
         {
@@ -42,6 +48,7 @@ public static class MenuFit
             var cm = (ContextMenu)s;
             st.Moved = false;
             cm.Placement = st.Placement;
+            cm.PlacementRectangle = st.R;
             cm.HorizontalOffset = st.H;
             cm.VerticalOffset = st.V;
         }));
@@ -58,20 +65,22 @@ public static class MenuFit
                     if (!n.Moved) return;
                     n.Moved = false;
                     p.Placement = n.Placement;
+                    p.PlacementRectangle = n.R;
                     p.HorizontalOffset = n.H;
                     p.VerticalOffset = n.V;
                 };
                 return n;
             });
-            if (!st.Moved) { st.Placement = p.Placement; st.H = p.HorizontalOffset; st.V = p.VerticalOffset; }
+            if (!st.Moved) { st.Placement = p.Placement; st.H = p.HorizontalOffset; st.V = p.VerticalOffset; st.R = p.PlacementRectangle; }
             bool bar = mi.Role == MenuItemRole.TopLevelHeader && mi.Parent is Menu;
             mi.Dispatcher.BeginInvoke(() => Fit(root, root, (x, y) =>
             {
                 st.Moved = true;
                 p.Placement = PlacementMode.Absolute;
+                p.PlacementRectangle = Rect.Empty;
                 p.HorizontalOffset = x;
                 p.VerticalOffset = y;
-            }, bar), DispatcherPriority.Loaded);
+            }, bar ? Hang.FromTop : Hang.Free), DispatcherPriority.Loaded);
         }));
     }
 
@@ -103,7 +112,7 @@ public static class MenuFit
     }
 
     /// <param name="moveTo">the popup's new top-left, in device-independent screen units (Absolute placement)</param>
-    static void Fit(FrameworkElement popupRoot, Visual searchFrom, Action<double, double> moveTo, bool hangsFromBar)
+    static void Fit(FrameworkElement popupRoot, Visual searchFrom, Action<double, double> moveTo, Hang hang)
     {
         try
         {
@@ -119,10 +128,15 @@ public static class MenuFit
             if (sv != null)
             {
                 double chrome = card.ActualHeight - sv.ActualHeight;
-                double room = (hangsFromBar ? work.Bottom - gap - tl.Y : work.Bottom - work.Top - 2 * gap) / s - chrome;
+                double room = hang switch
+                {
+                    Hang.FromTop => work.Bottom - gap - tl.Y,
+                    Hang.FromBottom => tl.Y + card.ActualHeight * s - (work.Top + gap),
+                    _ => work.Bottom - work.Top - 2 * gap,
+                } / s - chrome;
                 if (sv.ActualHeight > room) { sv.MaxHeight = Math.Max(60, room); card.UpdateLayout(); }
             }
-            if (hangsFromBar) return;
+            if (hang != Hang.Free) return;
             tl = card.PointToScreen(new Point(0, 0));
             double h = card.ActualHeight * s;
             double top = Math.Max(work.Top + gap, Math.Min(tl.Y, work.Bottom - gap - h));
