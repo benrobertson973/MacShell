@@ -246,6 +246,18 @@ public static class ShellHost
                     break;
                 }
             case "dockrecents": Dock?.TestRecents(); break;
+            case "trashtest":   // diagnostics: trashtest:putback:<original path> | trashtest:moveout:<original path>|<folder>
+                {
+                    string mode = arg[..arg.IndexOf(':')], rest = arg[(mode.Length + 1)..];
+                    string original = rest.Split('|')[0];
+                    string bin = Path.Combine(Path.GetPathRoot(original)!, "$Recycle.Bin", System.Security.Principal.WindowsIdentity.GetCurrent().User!.Value);
+                    string recycled = Directory.EnumerateFileSystemEntries(bin, "$R*")
+                        .FirstOrDefault(r => string.Equals(Finder.RecycleBin.OriginalPath(r), original, StringComparison.OrdinalIgnoreCase));
+                    if (recycled == null) break;
+                    if (mode == "putback") Task.Run(() => Finder.RecycleBin.Restore(new[] { recycled }));
+                    else Finder.FileOps.CopyOrMove(new[] { recycled }, rest.Split('|')[1], true);
+                    break;
+                }
             case "timerpop": MenuBar?.ToggleTimerPopover(); break;   // diagnostics: the timer's drop-down
             case "menubarhide": MenuBarWindow.SetHidden(arg, arg, true); break;    // diagnostics: menubarhide:<key>
             case "menubarshow": MenuBarWindow.SetHidden(arg, arg, false); break;
@@ -263,14 +275,13 @@ public static class ShellHost
                     case "repeat": CountdownTimer.Repeat(); break;
                     case "snooze": CountdownTimer.Snooze(); break;
                     case "dump": File.WriteAllText(Path.Combine(Settings.DataDirectory, "timer.txt"), $"{CountdownTimer.Status} {CountdownTimer.Text} of {CountdownTimer.Duration} rings={CountdownTimer.RingsAt} sound={Settings.Current.TimerSound}"); break;
-                    case { } a when a.StartsWith("mode:"): Settings.Current.TimerMode = a[5..]; Settings.Save(false); break;
-                    case { } a when a.StartsWith("text:"): Settings.Current.TimerAlarmText = a[5..]; Settings.Save(false); break;
+                    case { } a when a.StartsWith("text:"): Settings.Current.TimerText = a[5..]; Settings.Save(false); break;
                     case { } a when a.StartsWith("at:"):
                         if (CountdownTimer.TryParseTimeOfDay(a[3..], DateTime.Now, Settings.Current.Clock24Hour, out var when)) CountdownTimer.StartAt(when);
                         break;
                     case { } a when a.StartsWith("parse:"):
                         File.WriteAllLines(Path.Combine(Settings.DataDirectory, "timer.txt"), a[6..].Split('|').Select(t =>
-                            $"{t} -> " + (CountdownTimer.TryParseTimeOfDay(t, DateTime.Now, Settings.Current.Clock24Hour, out var w) ? w.ToString("ddd HH:mm") : "no")));
+                            $"{t} -> " + (!CountdownTimer.TryParse(t, DateTime.Now, out var len, out var w) ? "no" : w is DateTime d ? "rings " + d.ToString("ddd HH:mm") : "timer " + len)));
                         break;
                     default: if (double.TryParse(arg, out double sec)) CountdownTimer.Start(TimeSpan.FromSeconds(sec)); break;
                 }

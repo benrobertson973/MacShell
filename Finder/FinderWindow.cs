@@ -922,7 +922,6 @@ public partial class FinderWindow : MacWindow, IFinderHost
                         try { if (it.ExtendedProperty("System.Recycle.DateDeleted") is DateTime dd) item.Modified = dd; } catch { }
                         try { item.Size = Convert.ToInt64(it.Size); } catch { }
                         if (item.Modified == default) try { item.Modified = File.GetLastWriteTime(path); } catch { }
-                        item.ShellObject = it;
                         list.Add(item);
                     }
                     catch { }

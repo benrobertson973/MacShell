@@ -45,27 +45,12 @@ public partial class FinderWindow
 
     List<string> SelectedPaths => SelectedItems.Where(i => !i.IsApp && !FinderLocation.IsVirtual(i.FullPath)).Select(i => i.FullPath).ToList();
 
+    /// <summary>Back where they were deleted from (Windows' Restore).</summary>
     void PutBack(List<FileItem> items)
     {
-        foreach (var it in items)
-        {
-            try
-            {
-                dynamic fi = it.ShellObject;
-                if (fi == null) continue;
-                foreach (dynamic verb in fi.Verbs())
-                {
-                    string name = ((string)verb.Name).Replace("&", "");
-                    if (name.StartsWith("Restore", StringComparison.OrdinalIgnoreCase) || name.StartsWith("Undelete", StringComparison.OrdinalIgnoreCase))
-                    {
-                        verb.DoIt();
-                        break;
-                    }
-                }
-            }
-            catch { }
-        }
-        Dispatcher.BeginInvoke(() => Reload(false), DispatcherPriority.Background);
+        var paths = items.Where(i => i.IsTrashItem).Select(i => i.FullPath).ToList();
+        if (paths.Count == 0) return;
+        Task.Run(() => RecycleBin.Restore(paths)).ContinueWith(_ => Dispatcher.BeginInvoke(() => Reload(false), DispatcherPriority.Background));
     }
 
     void DeleteImmediately(List<FileItem> items)

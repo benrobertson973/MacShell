@@ -19,7 +19,6 @@ public class FileItem : INotifyPropertyChanged
     public string AppTarget { get; set; }
     public bool IsTrashItem { get; set; }
     public string OriginalLocation { get; set; }
-    public object ShellObject { get; set; }     // FolderItem for trash
     public long Size { get; set; } = -1;
     public DateTime Modified { get; set; }
     public DateTime Created { get; set; }

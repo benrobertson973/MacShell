@@ -28,7 +28,8 @@ public static class FileOps
 
     public static void MoveToTrash(IEnumerable<string> paths)
     {
-        var list = paths.Where(p => File.Exists(p) || Directory.Exists(p)).ToList();
+        // (items already in the Trash stay as they are)
+        var list = paths.Where(p => (File.Exists(p) || Directory.Exists(p)) && !RecycleBin.Contains(p)).ToList();
         if (list.Count == 0) return;
         Shell(FO_DELETE, list, null, (ushort)(FOF_ALLOWUNDO | FOF_NOCONFIRMATION | FOF_WANTNUKEWARNING));
         Sound.Play("trash");
@@ -38,6 +39,14 @@ public static class FileOps
     {
         var list = paths.Where(p => (File.Exists(p) || Directory.Exists(p))).ToList();
         if (list.Count == 0 || destFolder == null) return;
+        // dragged out of the Trash: put back, then moved here (under their own names, not the Recycle Bin's)
+        var recycled = list.Where(RecycleBin.Contains).ToList();
+        if (recycled.Count > 0)
+        {
+            RecycleBin.MoveOut(recycled, destFolder);
+            list = list.Except(recycled).ToList();
+            if (list.Count == 0) return;
+        }
         // never move a folder into itself
         list = list.Where(p => !destFolder.StartsWith(p.TrimEnd('\\') + "\\", StringComparison.OrdinalIgnoreCase)
                                && !string.Equals(Path.GetDirectoryName(p.TrimEnd('\\')), destFolder.TrimEnd('\\'), StringComparison.OrdinalIgnoreCase) || !move).ToList();
