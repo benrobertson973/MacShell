@@ -62,11 +62,13 @@ public static class ShellHost
 
         MenuBar = new MenuBarWindow();
         MenuBar.Show();
+        MenuBar.DpiChanged += (_, _) => UI.BeginInvoke(ScheduleRelayout);   // (the display's scale changed)
         if (Settings.Current.MenuBarTrayIcons) TrayHost.Start(MenuBar.TrayIconRect);
         TimerBanner.Install();
         CountdownTimer.Initialize();   // (a timer still running from before a restart)
         Dock = new DockWindow();
         Dock.Show();
+        Dock.DpiChanged += (_, _) => UI.BeginInvoke(ScheduleRelayout);
         UpdateWorkArea();
 
         WindowTracker.Start();
@@ -95,6 +97,7 @@ public static class ShellHost
             if (TakeoverEnabled) Takeover.Maintain();
             TrayHost.Maintain();
             CheckFullscreen();
+            CheckBarsInPlace();
         };
         _maintain.Start();
 
@@ -116,7 +119,10 @@ public static class ShellHost
         var primary = mons.FirstOrDefault(m => m.primary);
         if (primary.handle == IntPtr.Zero && mons.Count > 0) primary = mons[0];
         ScreenPx = primary.bounds;
-        Scale = GetDpiForSystem() / 96.0;
+        // the primary display's scale now (the system DPI stays what it was at sign-in, even after the scale changes
+        // with a new resolution - and MacShell's windows follow the display's)
+        Scale = primary.handle != IntPtr.Zero && GetDpiForMonitor(primary.handle, 0, out uint dpi, out _) == 0 && dpi > 0
+            ? dpi / 96.0 : GetDpiForSystem() / 96.0;
         if (Scale <= 0) Scale = 1;
         ScreenDip = new Size(ScreenPx.Width / Scale, ScreenPx.Height / Scale);
     }
@@ -124,6 +130,7 @@ public static class ShellHost
     static void OnDisplayChanged()
     {
         ComputeMetrics();
+        App.Log($"display changed: {ScreenPx.Width}x{ScreenPx.Height} px at {Scale * 100:0}%");
         Wallpaper.Load();
         var mons = GetMonitors();
         foreach (var d in Desktops.ToList()) d.Close();
@@ -134,9 +141,77 @@ public static class ShellHost
             Desktops.Add(d);
             d.Show();
         }
+        ScheduleRelayout();
+    }
+
+    static DispatcherTimer _relayout;
+    static int _relayoutStep;
+
+    /// <summary>
+    /// The menu bar and the Dock put back on the screen's edges, with the screen space they keep - now and again after
+    /// 0.5, 1.5 and 4 seconds: a new resolution comes with several changes in a row (the mode, the scale, the work area),
+    /// and Windows moves windows around while they arrive.
+    /// </summary>
+    public static void ScheduleRelayout()
+    {
+        Relayout();
+        _relayoutStep = 0;
+        if (_relayout == null)
+        {
+            _relayout = new DispatcherTimer();
+            _relayout.Tick += (_, _) =>
+            {
+                Relayout();
+                double[] next = { 1.0, 2.5 };   // (seconds after the previous one)
+                if (_relayoutStep < next.Length) _relayout.Interval = TimeSpan.FromSeconds(next[_relayoutStep++]);
+                else _relayout.Stop();
+            };
+        }
+        _relayout.Stop();
+        _relayout.Interval = TimeSpan.FromSeconds(0.5);
+        _relayout.Start();
+    }
+
+    static void Relayout()
+    {
+        ComputeMetrics();
         MenuBar?.Reposition();
         Dock?.Reposition();
-        UpdateWorkArea();
+        UpdateWorkArea(force: true);
+    }
+
+    static DateTime _lastBarsFix;
+
+    /// <summary>
+    /// Every 1.5 s: are the menu bar and the Dock still on the screen's edges, at its current size and scale? Windows can
+    /// move them, or change the screen, without MacShell hearing of it - then they're put back (not more often than
+    /// every 10 s, so nothing can make them fight).
+    /// </summary>
+    static void CheckBarsInPlace()
+    {
+        if (_fullscreen || MenuBar == null || Dock == null || MenuBar.Handle == IntPtr.Zero || Dock.Handle == IntPtr.Zero) return;
+        if ((DateTime.Now - _lastBarsFix).TotalSeconds < 10) return;
+        var screenBefore = ScreenPx;
+        double scaleBefore = Scale;
+        ComputeMetrics();
+        bool screenChanged = !ScreenPx.Equals(screenBefore) || Scale != scaleBefore;
+        bool menuBarOk = MenuBar.IsVisible && OnEdge(MenuBar.Handle, top: true), dockOk = Dock.IsVisible && OnEdge(Dock.Handle, top: false);
+        if (!screenChanged && menuBarOk && dockOk) return;
+        _lastBarsFix = DateTime.Now;
+        App.Log($"menu bar / Dock out of place (screen {(screenChanged ? "changed" : "same")}, menu bar {(menuBarOk ? "ok" : "off")}, Dock {(dockOk ? "ok" : "off")}): " +
+                $"putting them back at {ScreenPx.Width}x{ScreenPx.Height} px, {Scale * 100:0}%");
+        if (!MenuBar.IsVisible) MenuBar.Show();
+        if (!Dock.IsVisible) Dock.Show();
+        MenuBar.Reposition();
+        Dock.Reposition();
+        UpdateWorkArea(force: screenChanged);
+    }
+
+    static bool OnEdge(IntPtr h, bool top)
+    {
+        GetWindowRect(h, out RECT r);
+        var s = ScreenPx;
+        return Math.Abs(top ? r.Top - s.Top : r.Bottom - s.Bottom) <= 2 && Math.Abs(r.Left - s.Left) <= 2 && Math.Abs(r.Right - s.Right) <= 2;
     }
 
     static string ExeName(int pid)
@@ -144,10 +219,11 @@ public static class ShellHost
         try { return Process.GetProcessById(pid).ProcessName; } catch { return "?"; }
     }
 
-    public static void UpdateWorkArea()
+    /// <param name="force">tell Windows the reserved edges again even if their sizes haven't changed (the screen has)</param>
+    public static void UpdateWorkArea(bool force = false)
     {
         if (!TakeoverEnabled || Dock == null || MenuBar == null) return;
-        Takeover.Reserve(MenuBar.Handle, (int)Math.Round(MenuBarHeight * Scale), Dock.Handle, (int)Math.Round(Dock.ReservedHeight * Scale));
+        Takeover.Reserve(MenuBar.Handle, (int)Math.Round(MenuBarHeight * Scale), Dock.Handle, (int)Math.Round(Dock.ReservedHeight * Scale), force);
     }
 
     public static bool IsDesktopWindow(IntPtr h) => Desktops.Any(d => d.Handle == h);
@@ -246,6 +322,7 @@ public static class ShellHost
                     break;
                 }
             case "dockrecents": Dock?.TestRecents(); break;
+            case "displaychanged": OnDisplayChanged(); break;   // diagnostics: what a new resolution sets off
             case "trashtest":   // diagnostics: trashtest:putback:<original path> | trashtest:moveout:<original path>|<folder>
                 {
                     string mode = arg[..arg.IndexOf(':')], rest = arg[(mode.Length + 1)..];

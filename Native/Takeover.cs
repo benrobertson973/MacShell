@@ -261,7 +261,7 @@ public static class Takeover
     /// Reserves <paramref name="topPx"/> at the top (menu bar) and <paramref name="bottomPx"/> at the bottom (Dock)
     /// of the primary display. Only talks to Explorer when a thickness actually changes.
     /// </summary>
-    public static void Reserve(IntPtr menuBar, int topPx, IntPtr dock, int bottomPx)
+    public static void Reserve(IntPtr menuBar, int topPx, IntPtr dock, int bottomPx, bool force = false)
     {
         if (!Engaged) return;
         if (!ExplorerRunning)
@@ -269,11 +269,11 @@ public static class Takeover
             FallbackWorkArea(topPx, bottomPx);
             return;
         }
-        SetBar(menuBar, ABE_TOP, topPx);
-        SetBar(dock, ABE_BOTTOM, bottomPx);
+        SetBar(menuBar, ABE_TOP, topPx, force);
+        SetBar(dock, ABE_BOTTOM, bottomPx, force);
     }
 
-    static void SetBar(IntPtr hwnd, uint edge, int px)
+    static void SetBar(IntPtr hwnd, uint edge, int px, bool force = false)
     {
         if (hwnd == IntPtr.Zero) return;
         if (!_bars.TryGetValue(hwnd, out var bar)) _bars[hwnd] = bar = new AppBar { Edge = edge };
@@ -283,7 +283,7 @@ public static class Takeover
             _bars[hwnd] = new AppBar { Edge = edge, Thickness = 0 };
             return;
         }
-        if (bar.Registered && bar.Thickness == px) return;
+        if (bar.Registered && bar.Thickness == px && !force) return;
         if (!bar.Registered)
         {
             var abd = NewData(hwnd);

@@ -368,6 +368,8 @@ public static class NativeMethods
     [DllImport("user32.dll")] public static extern bool DestroyIcon(IntPtr h);
     [DllImport("user32.dll")] public static extern uint GetDpiForWindow(IntPtr hwnd);
     [DllImport("user32.dll")] public static extern uint GetDpiForSystem();
+    /// <summary>A monitor's DPI now (type 0 = effective): unlike GetDpiForSystem, follows scale changes made while signed in.</summary>
+    [DllImport("shcore.dll")] public static extern int GetDpiForMonitor(IntPtr monitor, int type, out uint dpiX, out uint dpiY);
     [DllImport("user32.dll")] public static extern IntPtr GetShellWindow();
     [DllImport("user32.dll")] public static extern IntPtr GetDC(IntPtr hwnd);
     [DllImport("user32.dll")] public static extern int ReleaseDC(IntPtr hwnd, IntPtr hdc);
