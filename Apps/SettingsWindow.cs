@@ -45,7 +45,7 @@ public class SettingsWindow : MacWindow
         ("users", "Users & Groups", "person.circle", "#3D9BFF", "#0A6CFF"),
         ("-", "", "", "", ""),
         ("keyboard", "Keyboard", "keyboard", "#A3A3A8", "#7C7C81"),
-        ("finder", "Finder", "@finder", "", ""),
+        ("finder", "Finder", "@finder", "#6CD0FB", "#1B8CF2"),
         ("macshell", "MacShell", "command", "#3A3A3C", "#141414"),
     };
 
@@ -150,7 +150,7 @@ public class SettingsWindow : MacWindow
 
     // ------------------------------------------------------------------ sidebar
 
-    static ImageSource PaneIcon((string id, string name, string sym, string top, string bottom) p) =>
+    public static ImageSource PaneIcon((string id, string name, string sym, string top, string bottom) p) =>
         p.sym == "@finder" ? MacIcons.Finder : MacIcons.Tile(p.sym, p.top, p.bottom);
 
     void BuildSidebar()

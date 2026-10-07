@@ -214,9 +214,12 @@ public class SpotlightWindow : Window
                 list.Add(new Result { Title = name, Group = "System", Kind = "System", Icon = sym == "@finder" ? MacIcons.Finder : sym == "@settings" ? MacIcons.SystemSettings : sym == "@preview" ? MacIcons.Preview : sym == "@launchpad" ? MacIcons.Launchpad : MacIcons.Tile(sym, top, bottom), Open = () => { Close(); act(); } });
 
         // settings panes
-        foreach (var (id, name, sym, top, bottom) in SettingsWindow.Panes)
-            if (Score(name, q) > 0)
-                list.Add(new Result { Title = name, Group = "System Settings", Kind = "Settings", Icon = MacIcons.Tile(sym, top, bottom), Open = () => { Close(); SettingsWindow.ShowPane(id); } });
+        foreach (var pane in SettingsWindow.Panes)
+            if (pane.id != "-" && Score(pane.name, q) > 0)
+            {
+                string id = pane.id;
+                list.Add(new Result { Title = pane.name, Group = "System Settings", Kind = "Settings", Icon = SettingsWindow.PaneIcon(pane), Open = () => { Close(); SettingsWindow.ShowPane(id); } });
+            }
 
         // web
         list.Add(new Result

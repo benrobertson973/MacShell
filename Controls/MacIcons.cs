@@ -16,7 +16,17 @@ public static class MacIcons
 {
     static readonly Dictionary<string, ImageSource> Cache = new();
 
-    static Color C(string hex) => (Color)ColorConverter.ConvertFromString(hex);
+    static readonly Color Neutral = Color.FromRgb(0x8E, 0x8E, 0x93);
+
+    /// <summary>Parses a color string; anything missing or malformed becomes a neutral gray
+    /// so a bad entry in a data table never takes down the caller.</summary>
+    static Color C(string hex)
+    {
+        if (string.IsNullOrWhiteSpace(hex)) return Neutral;
+        try { return ColorConverter.ConvertFromString(hex) is Color c ? c : Neutral; }
+        catch (FormatException) { return Neutral; }
+        catch (NotSupportedException) { return Neutral; }
+    }
     static Brush Solid(string hex) { var b = new SolidColorBrush(C(hex)); b.Freeze(); return b; }
     static Brush VGrad(string top, string bottom) { var b = new LinearGradientBrush(C(top), C(bottom), 90); b.Freeze(); return b; }
     static Geometry G(string s) { var g = Geometry.Parse(s); g.Freeze(); return g; }
