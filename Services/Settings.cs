@@ -77,6 +77,12 @@ public class AppSettings
     public bool TimerIsAlarm { get; set; }
     /// <summary>What was last typed in the timer's field ("5:00", "5:30pm"): offered again next time.</summary>
     public string TimerText { get; set; } = "5:00";
+    /// <summary>Eating mode (the timer starts over every this many seconds, with a soft chime) and its minutes so far.</summary>
+    public double? TimerRepeatSeconds { get; set; }
+    public int TimerCycles { get; set; }
+    /// <summary>Where eating mode's little window was dragged to (DIPs); null: the top right.</summary>
+    public double? EatingHudLeft { get; set; }
+    public double? EatingHudTop { get; set; }
     /// <summary>The alarm played when the timer ends: a sound in Windows\Media (without ".wav").</summary>
     public string TimerSound { get; set; } = "Alarm01";
 }

@@ -78,7 +78,7 @@ public class TimerPopover : Popover
         _left = _sub = _hint = null;
         _bar = null;
         _field = null;
-        var title = T("Timer", 13, FontWeights.SemiBold);
+        var title = T(CountdownTimer.IsEating && _built != CountdownTimer.State.Idle ? "Eating Mode" : "Timer", 13, FontWeights.SemiBold);
         title.Margin = new Thickness(2, 2, 0, 10);
         _root.Children.Add(title);
         switch (_built)
@@ -122,15 +122,21 @@ public class TimerPopover : Popover
         }
         _root.Children.Add(presets);
 
-        var start = new Button { Content = "Start", Style = (Style)Application.Current.Resources["MacDefaultButton"], Height = 28, MinWidth = 0, IsDefault = true, Margin = new Thickness(0, 14, 0, 2) };
-        start.Click += (_, _) =>
+        // Eating Mode (a minute, a soft chime, over and over) | Start
+        var bottom = new UniformGrid { Columns = 2, Margin = new Thickness(-3, 14, -3, 2) };
+        var eat = Btn("Eating Mode", false, () => { CountdownTimer.StartEating(); Close(); });
+        eat.ToolTip = "A minute at a time: a soft chime each minute, until you end it";
+        bottom.Children.Add(eat);
+        var start = Btn("Start", true, () =>
         {
             if (!CountdownTimer.TryParse(_field.Text, DateTime.Now, out var length, out var at)) { _field.Focus(); _field.SelectAll(); return; }
             Settings.Current.TimerText = _field.Text.Trim();
             if (at is DateTime when) CountdownTimer.StartAt(when); else CountdownTimer.Start(length);
             Close();
-        };
-        _root.Children.Add(start);
+        });
+        start.IsDefault = true;
+        bottom.Children.Add(start);
+        _root.Children.Add(bottom);
     }
 
     void UpdateHint()
@@ -180,6 +186,14 @@ public class TimerPopover : Popover
             cancel.Margin = new Thickness(0, 14, 0, 2);
             _root.Children.Add(cancel);
         }
+        else if (CountdownTimer.IsEating)
+        {
+            var buttons = new UniformGrid { Columns = 2, Margin = new Thickness(-3, 14, -3, 2) };
+            buttons.Children.Add(Btn("End", false, CountdownTimer.Cancel));
+            bool paused = _built == CountdownTimer.State.Paused;
+            buttons.Children.Add(Btn(paused ? "Resume" : "Pause", true, paused ? (Action)CountdownTimer.Resume : CountdownTimer.Pause));
+            _root.Children.Add(buttons);
+        }
         else
         {
             var buttons = new UniformGrid { Columns = 3, Margin = new Thickness(-3, 14, -3, 2) };
@@ -195,6 +209,7 @@ public class TimerPopover : Popover
     static string Subtitle()
     {
         if (CountdownTimer.Status == CountdownTimer.State.Paused) return "Paused";
+        if (CountdownTimer.IsEating) return $"Minute {CountdownTimer.Cycles + 1} · a soft chime each minute";
         if (CountdownTimer.RingsAt is DateTime at) return $"Rings {(at.Date == DateTime.Today ? "" : "tomorrow ")}at {Clock(at)}";
         return "Ends at " + Clock(DateTime.Now + CountdownTimer.Remaining);
     }

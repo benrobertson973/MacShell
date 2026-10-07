@@ -7,6 +7,7 @@ namespace MacShell.Services;
 /// <summary>
 /// The menu bar's timer: set from its "00:00" item - for a length of time, or to ring at a time of day (an alarm) -
 /// it counts down there; at zero an alarm rings (a looping Windows alarm sound, until stopped - at most 5 minutes).
+/// Eating mode instead starts the minute over and over, with a soft chime each time, until it's ended.
 /// A running or paused timer is kept in the settings, so it survives MacShell restarting (an update): it carries on,
 /// or rings if it ended while MacShell was away (up to 5 minutes ago).
 /// </summary>
@@ -21,8 +22,16 @@ public static class CountdownTimer
     public static DateTime? RingsAt { get; private set; }
     public static bool IsAlarm => RingsAt != null;
     public static readonly TimeSpan SnoozeFor = TimeSpan.FromMinutes(9);
+    /// <summary>Eating mode: the timer starts over every this long, with a soft chime, until it's ended.</summary>
+    public static TimeSpan? RepeatEvery { get; private set; }
+    public static bool IsEating => RepeatEvery != null;
+    /// <summary>Eating mode: the minutes gone by.</summary>
+    public static int Cycles { get; private set; }
+    public static readonly TimeSpan EatingMinute = TimeSpan.FromMinutes(1);
     /// <summary>State changes, and every second while it counts (and the flashing while it rings).</summary>
     public static event Action Changed;
+    /// <summary>Eating mode: a minute is up (its chime is playing).</summary>
+    public static event Action Chimed;
 
     static DateTime _endsUtc;     // Running
     static TimeSpan _left;        // Paused
@@ -60,11 +69,25 @@ public static class CountdownTimer
     {
         var s = Settings.Current;
         if (s.TimerSeconds >= 1) Duration = TimeSpan.FromSeconds(s.TimerSeconds);
+        if (s.TimerRepeatSeconds is double every && every >= 1)
+        {
+            RepeatEvery = TimeSpan.FromSeconds(every);
+            Duration = RepeatEvery.Value;
+            Cycles = s.TimerCycles;
+        }
         if (s.TimerEndsUtc is DateTime end)
         {
             end = DateTime.SpecifyKind(end, DateTimeKind.Utc);
             RingsAt = s.TimerIsAlarm ? end.ToLocalTime() : null;
-            if (end > DateTime.UtcNow) { _endsUtc = end; SetStatus(State.Running); }
+            if (RepeatEvery is TimeSpan minute && DateTime.UtcNow - end < RingFor)
+            {
+                // eating mode carries on, from the minute it's in now
+                while (end <= DateTime.UtcNow) end += minute;
+                _endsUtc = end;
+                SetStatus(State.Running);
+            }
+            else if (RepeatEvery != null) { RepeatEvery = null; SetStatus(State.Idle); Persist(); }
+            else if (end > DateTime.UtcNow) { _endsUtc = end; SetStatus(State.Running); }
             else if (DateTime.UtcNow - end < RingFor) Ring();
             else { SetStatus(State.Idle); Persist(); }
         }
@@ -80,6 +103,7 @@ public static class CountdownTimer
         if (length < TimeSpan.FromSeconds(1)) return;
         StopSound();
         RingsAt = null;
+        RepeatEvery = null;
         Duration = length;
         Settings.Current.TimerSeconds = length.TotalSeconds;
         _endsUtc = DateTime.UtcNow + length;
@@ -94,6 +118,7 @@ public static class CountdownTimer
         if (length < TimeSpan.FromSeconds(1)) return;
         StopSound();
         RingsAt = time;
+        RepeatEvery = null;
         Duration = length;
         _endsUtc = time.ToUniversalTime();
         SetStatus(State.Running);
@@ -102,6 +127,44 @@ public static class CountdownTimer
 
     /// <summary>The alarm off, and on again in 9 minutes.</summary>
     public static void Snooze() => StartAt(DateTime.Now + SnoozeFor);
+
+    /// <summary>Diagnostics: a paused timer put back as it was (<paramref name="left"/> of <paramref name="length"/>).</summary>
+    public static void RestorePaused(TimeSpan left, TimeSpan length)
+    {
+        StopSound();
+        RingsAt = null;
+        RepeatEvery = null;
+        Cycles = 0;
+        Duration = length;
+        _left = left;
+        SetStatus(State.Paused);
+        Persist();
+    }
+
+    /// <summary>Eating mode: a minute, a soft chime, and the next minute - over and over until it's ended (Cancel).</summary>
+    public static void StartEating(TimeSpan? every = null)
+    {
+        StopSound();
+        RingsAt = null;
+        RepeatEvery = every ?? EatingMinute;
+        Duration = RepeatEvery.Value;
+        Cycles = 0;
+        _endsUtc = DateTime.UtcNow + RepeatEvery.Value;
+        SetStatus(State.Running);
+        Persist();
+    }
+
+    static void NextMinute(TimeSpan every)
+    {
+        Cycles++;
+        _endsUtc += every;
+        if (_endsUtc <= DateTime.UtcNow) _endsUtc = DateTime.UtcNow + every;   // (after the computer slept: a fresh minute)
+        PlayChime();
+        Persist();
+        _shown = Text;
+        Chimed?.Invoke();
+        Changed?.Invoke();
+    }
 
     public static void Pause()
     {
@@ -136,6 +199,8 @@ public static class CountdownTimer
     {
         StopSound();
         RingsAt = null;
+        RepeatEvery = null;
+        Cycles = 0;
         SetStatus(State.Idle);
         Persist();
     }
@@ -279,7 +344,11 @@ public static class CountdownTimer
     {
         if (Status == State.Running)
         {
-            if (Remaining <= TimeSpan.Zero) { Ring(); return; }
+            if (Remaining <= TimeSpan.Zero)
+            {
+                if (RepeatEvery is TimeSpan every) NextMinute(every); else Ring();
+                return;
+            }
             if (Text != _shown) { _shown = Text; Changed?.Invoke(); }
         }
         else if (Status == State.Ringing)
@@ -297,6 +366,8 @@ public static class CountdownTimer
         s.TimerEndsUtc = Status == State.Running ? _endsUtc : null;
         s.TimerPausedSeconds = Status == State.Paused ? _left.TotalSeconds : null;
         s.TimerIsAlarm = Status == State.Running && RingsAt != null;
+        s.TimerRepeatSeconds = Status is State.Running or State.Paused && RepeatEvery != null ? RepeatEvery.Value.TotalSeconds : null;
+        s.TimerCycles = Cycles;
         Settings.Save(notify: false);
     }
 
@@ -323,4 +394,46 @@ public static class CountdownTimer
     }
 
     static void StopSound() => PlaySound(null, IntPtr.Zero, 0);
+
+    // ------------------------------------------------------------------ eating mode's chime
+
+    [DllImport("winmm.dll", EntryPoint = "PlaySoundW")]
+    static extern bool PlaySoundMemory(IntPtr wav, IntPtr module, uint flags);
+    const uint SND_MEMORY = 0x0004;
+    static IntPtr _chime;   // (made once, and kept where Windows can play it from while MacShell carries on)
+
+    /// <summary>A soft "ding": quiet (about a fifth of full volume) and short, not an alarm.</summary>
+    public static void PlayChime()
+    {
+        if (_chime == IntPtr.Zero)
+        {
+            byte[] wav = MakeChime();
+            _chime = Marshal.AllocHGlobal(wav.Length);
+            Marshal.Copy(wav, 0, _chime, wav.Length);
+        }
+        PlaySoundMemory(_chime, IntPtr.Zero, SND_ASYNC | SND_NODEFAULT | SND_MEMORY);
+    }
+
+    /// <summary>A small bell: A5 with two overtones that fade sooner, 1.3 seconds, peaking at 22% of full scale.</summary>
+    static byte[] MakeChime()
+    {
+        const int rate = 44100;
+        int n = (int)(rate * 1.3);
+        using var ms = new MemoryStream();
+        using var w = new BinaryWriter(ms);
+        w.Write("RIFF"u8); w.Write(36 + n * 2); w.Write("WAVE"u8);
+        w.Write("fmt "u8); w.Write(16); w.Write((short)1); w.Write((short)1); w.Write(rate); w.Write(rate * 2); w.Write((short)2); w.Write((short)16);
+        w.Write("data"u8); w.Write(n * 2);
+        for (int i = 0; i < n; i++)
+        {
+            double t = (double)i / rate;
+            double v = Math.Sin(2 * Math.PI * 880 * t) * Math.Exp(-t / 0.42)
+                     + 0.32 * Math.Sin(2 * Math.PI * 1760 * t) * Math.Exp(-t / 0.22)
+                     + 0.12 * Math.Sin(2 * Math.PI * 2640 * t) * Math.Exp(-t / 0.12);
+            double attack = Math.Min(1, t / 0.006);   // (no click at the start)
+            w.Write((short)Math.Round(v / 1.44 * attack * 0.22 * short.MaxValue));
+        }
+        w.Flush();
+        return ms.ToArray();
+    }
 }

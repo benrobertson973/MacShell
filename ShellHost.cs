@@ -65,6 +65,7 @@ public static class ShellHost
         MenuBar.DpiChanged += (_, _) => UI.BeginInvoke(ScheduleRelayout);   // (the display's scale changed)
         if (Settings.Current.MenuBarTrayIcons) TrayHost.Start(MenuBar.TrayIconRect);
         TimerBanner.Install();
+        EatingHud.Install();
         CountdownTimer.Initialize();   // (a timer still running from before a restart)
         Dock = new DockWindow();
         Dock.Show();
@@ -351,6 +352,15 @@ public static class ShellHost
                     case "cancel": CountdownTimer.Cancel(); break;
                     case "repeat": CountdownTimer.Repeat(); break;
                     case "snooze": CountdownTimer.Snooze(); break;
+                    case "eat": CountdownTimer.StartEating(); break;
+                    case "chime": CountdownTimer.PlayChime(); break;
+                    case { } a when a.StartsWith("eat:"): CountdownTimer.StartEating(TimeSpan.FromSeconds(double.Parse(a[4..]))); break;
+                    case { } a when a.StartsWith("restorepaused:"):   // restorepaused:<seconds left>:<length in seconds>
+                        {
+                            var v = a[14..].Split(':');
+                            CountdownTimer.RestorePaused(TimeSpan.FromSeconds(double.Parse(v[0])), TimeSpan.FromSeconds(double.Parse(v[1])));
+                            break;
+                        }
                     case "dump": File.WriteAllText(Path.Combine(Settings.DataDirectory, "timer.txt"), $"{CountdownTimer.Status} {CountdownTimer.Text} of {CountdownTimer.Duration} rings={CountdownTimer.RingsAt} sound={Settings.Current.TimerSound}"); break;
                     case { } a when a.StartsWith("text:"): Settings.Current.TimerText = a[5..]; Settings.Save(false); break;
                     case { } a when a.StartsWith("at:"):
