@@ -60,6 +60,8 @@ public static class WindowTracker
         return id;
     }
     static readonly List<IntPtr> Recency = new();
+    static readonly Dictionary<IntPtr, long> Opened = new();   // windows in the order they appeared (cycling through them)
+    static long _openedCount;
     static readonly WinEventDelegate _evProc = OnWinEvent;
     static readonly List<IntPtr> _hooks = new();
     static DispatcherTimer _timer, _debounce;
@@ -189,7 +191,7 @@ public static class WindowTracker
     public static RunningApp MakeInternalApp(string key) => new()
     {
         Key = key,
-        Name = key switch { "internal:settings" => "System Settings", "internal:preview" => "Preview", _ => "Finder" },
+        Name = key switch { "internal:settings" => "System Settings", "internal:preview" => "Preview", "internal:mail" => "Mail", _ => "Finder" },
         IsInternal = true,
         LaunchTarget = key,
     };
@@ -351,6 +353,9 @@ public static class WindowTracker
             return true;
         }, IntPtr.Zero);
 
+        foreach (var w in list) if (!Opened.ContainsKey(w.Hwnd)) Opened[w.Hwnd] = ++_openedCount;
+        var live = list.Select(w => w.Hwnd).ToHashSet();
+        foreach (var k in Opened.Keys.Where(k => !live.Contains(k)).ToList()) Opened.Remove(k);
         foreach (var k in AumidCache.Keys.Where(k => !seen.Contains(k)).ToList()) AumidCache.Remove(k);
         var livePids = list.Select(w => w.Pid).ToHashSet();
         foreach (var k in PidAumids.Keys.Where(k => !livePids.Contains(k)).ToList()) PidAumids.Remove(k);
@@ -424,6 +429,26 @@ public static class WindowTracker
         ActivateWindow(target.Hwnd);
     }
 
+    /// <summary>
+    /// The Dock icon of the app already in front, clicked again: its next window, in the order they were opened (after the
+    /// last, the first again; a minimized one is restored). False when that doesn't apply - the app isn't the one in
+    /// front, or has one window - and the click just brings the app forward.
+    /// </summary>
+    public static bool CycleWindows(RunningApp app)
+    {
+        if (app == null || app.Windows.Count < 2) return false;
+        var front = GetForegroundWindow();
+        var root = GetAncestor(front, GA_ROOTOWNER);
+        if (root != IntPtr.Zero) front = root;
+        var inOrder = app.Windows.OrderBy(w => Opened.TryGetValue(w.Hwnd, out long n) ? n : long.MaxValue).ToList();
+        int i = inOrder.FindIndex(w => w.Hwnd == front);
+        if (i < 0) return false;
+        var next = inOrder[(i + 1) % inOrder.Count];
+        if (IsIconic(next.Hwnd)) ShowWindow(next.Hwnd, SW_RESTORE);
+        ActivateWindow(next.Hwnd);
+        return true;
+    }
+
     public static void HideApp(RunningApp app)
     {
         if (app == null) return;
@@ -441,13 +466,47 @@ public static class WindowTracker
 
     public static void ForceQuitApp(RunningApp app)
     {
-        if (app == null || app.IsInternal) return;
-        foreach (var pid in app.Pids.Count > 0 ? app.Pids : app.Windows.Select(w => w.Pid).ToHashSet())
+        foreach (var pid in ForceQuitPids(app))
         {
             try { Process.GetProcessById((int)pid).Kill(); } catch { }
         }
         ScheduleRefresh();
     }
+
+    /// <summary>Processes Force Quit never ends: Windows' own, and hosts that show other apps' windows too.</summary>
+    static readonly HashSet<string> SharedHosts = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "explorer.exe", "ApplicationFrameHost.exe", "dwm.exe", "svchost.exe", "sihost.exe", "csrss.exe", "winlogon.exe",
+        "ShellExperienceHost.exe", "StartMenuExperienceHost.exe", "SearchHost.exe", "TextInputHost.exe", "RuntimeBroker.exe",
+    };
+
+    /// <summary>
+    /// What Force Quit ends for an app (none: Force Quit isn't offered): its own processes - for a Store app the one behind
+    /// its CoreWindow, not the frame host all Store apps share - never Windows' own, and nothing for a web app a browser
+    /// runs (its windows are the browser's process: ending it would end the whole browser).
+    /// </summary>
+    public static List<uint> ForceQuitPids(RunningApp app)
+    {
+        var pids = new HashSet<uint>();
+        if (app == null || app.IsInternal || app.Key.Contains("_crx_", StringComparison.OrdinalIgnoreCase)) return new();
+        foreach (var w in app.Windows)
+        {
+            uint pid = w.Pid;
+            string exe = PathOf(pid);
+            if (exe != null && exe.EndsWith("\\ApplicationFrameHost.exe", StringComparison.OrdinalIgnoreCase))
+            {
+                var core = FindCoreWindow(w.Hwnd);
+                if (core == IntPtr.Zero) continue;
+                GetWindowThreadProcessId(core, out pid);
+                exe = PathOf(pid);
+            }
+            if (pid == 0 || pid == MyPid || exe == null || SharedHosts.Contains(Path.GetFileName(exe))) continue;
+            pids.Add(pid);
+        }
+        return pids.ToList();
+    }
+
+    static string PathOf(uint pid) => PidPaths.TryGetValue(pid, out var p) ? p : GetProcessPath(pid);
 
     public static RunningApp FindByKey(string key) => key != null && Apps.TryGetValue(key, out var a) ? a : null;
 }

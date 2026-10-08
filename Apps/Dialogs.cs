@@ -57,12 +57,13 @@ public class MacAlert : PanelWindow
 {
     public string Result { get; private set; }
 
-    public MacAlert(string title, string message, string[] buttons)
+    /// <param name="defaultButton">The button Return presses (blue): the last one unless given.</param>
+    public MacAlert(string title, string message, string[] buttons, ImageSource icon = null, int defaultButton = -1)
     {
         Topmost = true;
         Title = title;
         var sp = new StackPanel { Width = 260, Margin = new Thickness(18, 20, 18, 16) };
-        sp.Children.Add(new Image { Source = MacIcons.Finder, Width = 64, Height = 64, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 0, 0, 12) });
+        sp.Children.Add(new Image { Source = icon ?? MacIcons.Finder, Width = 64, Height = 64, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 0, 0, 12) });
         sp.Children.Add(Text(title, 13, FontWeights.Bold, align: TextAlignment.Center));
         if (!string.IsNullOrWhiteSpace(message))
         {
@@ -76,7 +77,7 @@ public class MacAlert : PanelWindow
         for (int i = 0; i < buttons.Length; i++)
         {
             string label = buttons[i];
-            bool isDefault = i == buttons.Length - 1;
+            bool isDefault = i == (defaultButton >= 0 ? defaultButton : buttons.Length - 1);
             var b = new Button
             {
                 Content = label,

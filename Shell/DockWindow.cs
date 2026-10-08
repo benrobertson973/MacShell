@@ -145,6 +145,14 @@ public class DockWindow : Window
 
     public void EnsureDefaultPins()
     {
+        // Mail joins the Dock once (after the first app, like Mail beside Safari on a Mac); taken out, it stays out
+        if (!Settings.Current.MailPinned && Settings.Current.DockApps != null)
+        {
+            Settings.Current.MailPinned = true;
+            if (Settings.Current.DockApps.All(p => p.Target != Apps.Mail.MailWindow.AppId))
+                Settings.Current.DockApps.Insert(Math.Min(1, Settings.Current.DockApps.Count), new PinnedApp { Name = "Mail", Target = Apps.Mail.MailWindow.AppId });
+            Settings.Save(false);
+        }
         if (Settings.Current.DockApps != null || !AppCatalog.IsLoaded) return;
         var pins = new List<PinnedApp>();
         void Add(AppEntry e) { if (e != null && pins.All(p => p.Target != e.ParsingName)) pins.Add(new PinnedApp { Name = e.Name, Target = e.ParsingName, ExePath = e.TargetPath }); }
@@ -236,6 +244,7 @@ public class DockWindow : Window
         var item = new DockItem { Kind = target == "internal:settings" ? "settings" : "app", Target = target, ExePath = exe, Name = name };
         if (target == "internal:settings") { item.Icon = MacIcons.SystemSettings; item.IconIsVector = true; item.Name = "System Settings"; return item; }
         if (target == Apps.Preview.PreviewWindow.AppId) { item.Icon = MacIcons.Preview; item.IconIsVector = true; item.Name = "Preview"; return item; }
+        if (target == Apps.Mail.MailWindow.AppId) { item.Icon = MacIcons.Mail; item.IconIsVector = true; item.Name = "Mail"; return item; }
         item.Icon = MacIcons.GenericApp;
         item.IconIsVector = true;
         EnsureIcon(item, iconSource);
@@ -277,7 +286,8 @@ public class DockWindow : Window
         var running = it.Running != null ? WindowTracker.FindByKey(it.Running.Key) ?? it.Running : null;
         if (running != null && running.Windows.Count > 0)
         {
-            WindowTracker.ActivateApp(running);
+            // (already in front with several windows: each click, the next one)
+            if (!WindowTracker.CycleWindows(running)) WindowTracker.ActivateApp(running);
             return;
         }
         if (AppCatalog.Launch(it.Target ?? it.ExePath))
@@ -287,6 +297,13 @@ public class DockWindow : Window
         }
     }
 
+    /// <summary>Diagnostics (--open dockclick:&lt;kind or key&gt;): a click on that Dock icon.</summary>
+    public void TestClick(string which)
+    {
+        var it = _items.FirstOrDefault(i => i.Kind == which || string.Equals(i.Key, which, StringComparison.OrdinalIgnoreCase));
+        if (it != null) Click(it);
+    }
+
     /// <summary>Diagnostics (--open dockrecents): the Recents stack, as clicking it opens it (window "Recents Stack").</summary>
     public void TestRecents()
     {
@@ -294,10 +311,21 @@ public class DockWindow : Window
         if (it != null) Click(it);
     }
 
-    void ShowMenu(DockItem it, Rect iconRect)
+    void ShowMenu(DockItem it, Rect iconRect) => OpenMenuAbove(BuildMenu(it), iconRect);
+
+    /// <summary>Diagnostics (--open dockmenudump:&lt;kind or key&gt;): that Dock icon's menu, its items written to dockmenu.txt
+    /// (the menu isn't shown).</summary>
+    public void DumpMenu(string which)
+    {
+        var it = _items.FirstOrDefault(i => i.Kind == which || string.Equals(i.Key, which, StringComparison.OrdinalIgnoreCase));
+        if (it == null) return;
+        var lines = BuildMenu(it).Items.Cast<object>().Select(o => o is MenuItem mi ? mi.Header?.ToString() : "—");
+        File.WriteAllLines(Path.Combine(Settings.DataDirectory, "dockmenu.txt"), lines);
+    }
+
+    ContextMenu BuildMenu(DockItem it)
     {
         var cm = new ContextMenu();
-        bool alt = Keyboard.Modifiers.HasFlag(ModifierKeys.Alt);
         var running = it.Running != null ? WindowTracker.FindByKey(it.Running.Key) ?? it.Running : null;
         switch (it.Kind)
         {
@@ -330,6 +358,14 @@ public class DockWindow : Window
                 break;
             default:
                 AddWindowList(cm, running);
+                // a web browser: New Window and a private one, as browsers' Dock menus have on a Mac
+                string exe = running?.ExePath ?? it.ExePath ?? AppCatalog.FindByParsingName(it.Target)?.TargetPath;
+                if (BrowserFor(exe, it.Key) is var (newWindow, privateName, privateArg))
+                {
+                    Mb.Add(cm.Items, Mb.Item("New Window", () => StartShell(exe, newWindow)));
+                    Mb.Add(cm.Items, Mb.Item(privateName, () => StartShell(exe, privateArg)));
+                    Mb.Add(cm.Items, Mb.Sep());
+                }
                 var options = Mb.Sub("Options",
                     it.Pinned ? Mb.Item("Keep in Dock", () => Unpin(it), isChecked: true) : Mb.Item("Keep in Dock", () => Pin(it)),
                     Mb.Sep(),
@@ -341,12 +377,31 @@ public class DockWindow : Window
                 {
                     Mb.Add(cm.Items, Mb.Item("Show All Windows", () => MissionControlWindow.Show(running)));
                     Mb.Add(cm.Items, Mb.Item("Hide", () => WindowTracker.HideApp(running)));
-                    Mb.Add(cm.Items, alt ? Mb.Item("Force Quit", () => WindowTracker.ForceQuitApp(running)) : Mb.Item("Quit", () => WindowTracker.QuitApp(running)));
+                    // (with Alt held - Option on a Mac - Quit becomes Force Quit)
+                    bool force = Keyboard.Modifiers.HasFlag(ModifierKeys.Alt) && WindowTracker.ForceQuitPids(running).Count > 0;
+                    Mb.Add(cm.Items, force ? Mb.Item("Force Quit", () => WindowTracker.ForceQuitApp(running)) : Mb.Item("Quit", () => WindowTracker.QuitApp(running)));
                 }
                 else Mb.Add(cm.Items, Mb.Item("Open", () => Click(it)));
                 break;
         }
-        OpenMenuAbove(cm, iconRect);
+        return cm;
+    }
+
+    /// <summary>A web browser's command lines for a new window and a private one (null: not a browser - nor a web app
+    /// a browser runs, like a Google Calendar app made by Brave, whose windows are brave.exe's too).</summary>
+    static (string newWindow, string privateName, string privateArg)? BrowserFor(string exe, string key)
+    {
+        if (key != null && key.Contains("_crx_", StringComparison.OrdinalIgnoreCase)) return null;
+        return Path.GetFileName(exe ?? "").ToLowerInvariant() switch
+        {
+            "brave.exe" => ("--new-window", "New Private Window", "--incognito"),
+            "chrome.exe" or "chromium.exe" or "thorium.exe" => ("--new-window", "New Incognito Window", "--incognito"),
+            "vivaldi.exe" => ("--new-window", "New Private Window", "--incognito"),
+            "msedge.exe" => ("--new-window", "New InPrivate Window", "--inprivate"),
+            "opera.exe" => ("--new-window", "New Private Window", "--private"),
+            "firefox.exe" => ("-new-window", "New Private Window", "-private-window"),
+            _ => null,
+        };
     }
 
     static void StartShell(string file, string args)

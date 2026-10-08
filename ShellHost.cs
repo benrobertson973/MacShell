@@ -66,7 +66,9 @@ public static class ShellHost
         if (Settings.Current.MenuBarTrayIcons) TrayHost.Start(MenuBar.TrayIconRect);
         TimerBanner.Install();
         EatingHud.Install();
+        Apps.Mail.MailService.Start();   // (with accounts: checked for new mail from now on - the Dock badge, banners)
         CountdownTimer.Initialize();   // (a timer still running from before a restart)
+        Weather.Start();
         Dock = new DockWindow();
         Dock.Show();
         Dock.DpiChanged += (_, _) => UI.BeginInvoke(ScheduleRelayout);
@@ -323,6 +325,49 @@ public static class ShellHost
                     break;
                 }
             case "dockrecents": Dock?.TestRecents(); break;
+            case "mailtest":   // diagnostics: mailtest:add|remove - an account on a test mail server on this computer (IMAP 1143, SMTP 1025)
+                if (arg == "add" && Apps.Mail.MailService.Accounts.All(a => a.Provider != Apps.Mail.MailProvider.Test))
+                {
+                    var t = new Apps.Mail.MailAccount { Id = "atest", Provider = Apps.Mail.MailProvider.Test, Email = "test@example.test", Name = "Test User", TestImapPort = 1143, TestSmtpPort = 1025 };
+                    t.Password = "test-password-123";
+                    Apps.Mail.MailService.AddAccount(t);
+                }
+                else if (arg == "remove")
+                    foreach (var t in Apps.Mail.MailService.Accounts.Where(a => a.Provider == Apps.Mail.MailProvider.Test).ToList()) Apps.Mail.MailService.RemoveAccount(t);
+                else if (Apps.Mail.MailService.Accounts.FirstOrDefault(a => a.Provider == Apps.Mail.MailProvider.Test) is { } ta && Apps.Mail.MailService.Sync(ta.Id) is { } ts)
+                    _ = MailTestAsync(arg, ts);
+                break;
+            case "mailopen": Apps.Mail.MailWindow.OpenApp(); break;
+            case "winfo":   // diagnostics: winfo:<title> - a window's sizes → winfo.txt
+                if (Application.Current.Windows.Cast<Window>().FirstOrDefault(w => w.Title == arg) is { } wi)
+                {
+                    var fe = wi.Content as FrameworkElement;
+                    File.WriteAllText(Path.Combine(Settings.DataDirectory, "winfo.txt"),
+                        $"Min {wi.MinWidth}x{wi.MinHeight} Max {wi.MaxWidth}x{wi.MaxHeight} Size {wi.Width}x{wi.Height} Actual {wi.ActualWidth}x{wi.ActualHeight} " +
+                        $"SizeToContent={wi.SizeToContent} State={wi.WindowState} Content desired {fe?.DesiredSize} min {fe?.MinHeight} actual {fe?.ActualWidth}x{fe?.ActualHeight}");
+                }
+                break;
+            case "appmenus":   // diagnostics: the menu bar's menus for each running app (no native menu) → appmenus.txt
+                File.WriteAllText(Path.Combine(Settings.DataDirectory, "appmenus.txt"), string.Concat(WindowTracker.Apps.Values
+                    .Where(a => !a.IsInternal && a.Windows.Count > 0 && GetMenu(a.Windows[0].Hwnd) == IntPtr.Zero)
+                    .Select(a => AppMenus.Describe(a, a.Windows[0].Hwnd))));
+                break;
+            case "mailstate":   // diagnostics: what Mail's front window shows (counts only) → mailstate.txt
+                File.WriteAllText(Path.Combine(Settings.DataDirectory, "mailstate.txt"), Apps.Mail.MailWindow.TestState());
+                break;
+            case "maildump":   // diagnostics: each account's sync health (no addresses, no messages) → maildump.txt
+                File.WriteAllLines(Path.Combine(Settings.DataDirectory, "maildump.txt"), Apps.Mail.MailService.All.Select(s =>
+                    $"{s.Account.Provider}: error={s.Error ?? "none"} push={s.Pushing} busy={s.Busy} mailboxes={s.Folders.Count} " +
+                    string.Join(" ", s.Folders.Where(f => f.Role != null).Select(f => $"{f.Role}={s.Messages(f.FullName).Count}/{f.Total}({f.Unread} unread, {s.Messages(f.FullName).Count(m => !m.Seen)} here)")) +
+                    "\n   mailboxes: " + string.Join("; ", s.Folders.Select(f => $"{f.FullName}={f.Role ?? "-"} [{f.ServerFlags ?? "?"}]"))));
+                break;
+            case "dockclick": Dock?.TestClick(arg); break;   // diagnostics: dockclick:<kind or key> (finder, app:brave …)
+            case "dockmenudump": Dock?.DumpMenu(arg); break;  // diagnostics: that Dock icon's menu items → dockmenu.txt
+            case "forcequitdump":   // diagnostics: what Force Quit would end for each open app (nothing is ended) → forcequit.txt
+                File.WriteAllLines(Path.Combine(Settings.DataDirectory, "forcequit.txt"), WindowTracker.Apps.Values.Where(a => a.Windows.Count > 0).Select(a =>
+                    $"{a.Name} [{a.Key}]: " + string.Join(", ", WindowTracker.ForceQuitPids(a).Select(p => $"{p} {Path.GetFileName(GetProcessPath(p) ?? "?")}")) +
+                    $"   (window pids: {string.Join(", ", a.Windows.Select(w => w.Pid).Distinct())})"));
+                break;
             case "displaychanged": OnDisplayChanged(); break;   // diagnostics: what a new resolution sets off
             case "trashtest":   // diagnostics: trashtest:putback:<original path> | trashtest:moveout:<original path>|<folder>
                 {
@@ -337,6 +382,25 @@ public static class ShellHost
                     break;
                 }
             case "timerpop": MenuBar?.ToggleTimerPopover(); break;   // diagnostics: the timer's drop-down
+            case "weatherpop": MenuBar?.ToggleWeatherPopover(); break;   // diagnostics: the weather's drop-down
+            case "weatherdump":   // diagnostics: what the menu bar's weather knows (not where) → weather.txt
+                File.WriteAllText(Path.Combine(Settings.DataDirectory, "weather.txt"),
+                    $"temp={Weather.Temperature} feels={Weather.FeelsLike} high={Weather.High} low={Weather.Low} code={Weather.Code} ({Weather.Describe(Weather.Code)}) " +
+                    $"day={Weather.IsDay} hours={string.Join(",", Weather.Hours.Select(h => $"{h.Time:htt}:{Weather.Degrees(h.Temp)}/{h.Code}"))} automatic={Weather.Automatic} " +
+                    $"placeKnown={!string.IsNullOrEmpty(Weather.PlaceName)} updated={Weather.Updated:T} current={Weather.Current} error={Weather.Error ?? "none"} " +
+                    $"shown={MenuBar?.WeatherShown}");
+                break;
+            case "weatherplace":   // diagnostics: weatherplace:<city or ZIP> - the best match used; weatherplace: - automatic again
+                if (string.IsNullOrEmpty(arg)) Weather.SetPlace(null, null, null);
+                else _ = Task.Run(() => Weather.SearchAsync(arg)).ContinueWith(t =>
+                {
+                    if (t.Result.Count > 0) UI.BeginInvoke(() => Weather.SetPlace(t.Result[0].name, t.Result[0].lat, t.Result[0].lon));
+                });
+                break;
+            case "weathersearch":   // diagnostics: weathersearch:<city or ZIP> - the places found (nothing chosen) → weathersearch.txt
+                _ = Task.Run(async () => File.WriteAllLines(Path.Combine(Settings.DataDirectory, "weathersearch.txt"),
+                    (await Weather.SearchAsync(arg)).Select(p => $"{p.name} ({p.lat:0.##}, {p.lon:0.##})")));
+                break;
             case "menubarhide": MenuBarWindow.SetHidden(arg, arg, true); break;    // diagnostics: menubarhide:<key>
             case "menubarshow": MenuBarWindow.SetHidden(arg, arg, false); break;
             case "dumpmenubar":   // diagnostics: the menu bar's app icons (keys, names) and what's taken out
@@ -455,6 +519,55 @@ public static class ShellHost
     }
 
     /// <summary>Renders a MacShell window's WPF content to %APPDATA%\MacShell\snap.png (for automated visual checks).</summary>
+    /// <summary>Diagnostics on the test mail account (mailtest:send | ops | dump): results to mailtest.txt.</summary>
+    static async Task MailTestAsync(string what, Apps.Mail.MailSync s)
+    {
+        var log = new System.Text.StringBuilder();
+        try
+        {
+            var inbox = s.FolderByRole("inbox");
+            switch (what)
+            {
+                case "send":
+                    var m = new MimeKit.MimeMessage();
+                    m.From.Add(new MimeKit.MailboxAddress("Test User", s.Account.Email));
+                    m.To.Add(new MimeKit.MailboxAddress("Alice", "alice@example.test"));
+                    m.Subject = "Sent by the Mail test";
+                    m.Body = new MimeKit.BodyBuilder { TextBody = "Hello from MacShell Mail.", HtmlBody = "<p>Hello from <b>MacShell Mail</b>.</p>" }.ToMessageBody();
+                    await s.SendAsync(m);
+                    await Task.Delay(1500);
+                    var sent = s.FolderByRole("sent");
+                    await s.SyncFolderAsync(sent.FullName);
+                    log.AppendLine($"sent: {string.Join(" | ", s.Messages(sent.FullName).Select(x => x.Subject))}");
+                    break;
+                case "ops":
+                    var list = s.Messages(inbox.FullName);
+                    var a = list[^1]; var b = list[^2]; var c = list[^3];
+                    log.AppendLine($"before: inbox {list.Count}, unread {inbox.Unread}");
+                    await s.SetFlagAsync(new[] { a }, MailKit.MessageFlags.Seen, false);
+                    await s.SetFlagAsync(new[] { a }, MailKit.MessageFlags.Flagged, true);
+                    await s.MoveAsync(new[] { b }, s.FolderByRole("archive").FullName);
+                    await s.MoveAsync(new[] { c }, s.FolderByRole("trash").FullName);
+                    await s.SyncFolderAsync(inbox.FullName);
+                    var trash = s.FolderByRole("trash");
+                    await s.SyncFolderAsync(trash.FullName);
+                    var inTrash = s.Messages(trash.FullName).FirstOrDefault(x => x.Subject == c.Subject);
+                    if (inTrash != null) await s.EraseAsync(new[] { inTrash });
+                    await s.SyncFolderAsync(trash.FullName);
+                    await s.SyncFolderAsync(s.FolderByRole("archive").FullName);
+                    var now = s.Messages(inbox.FullName);
+                    var a2 = now.FirstOrDefault(x => x.Subject == a.Subject);
+                    log.AppendLine($"after: inbox {now.Count}, unread {inbox.Unread}; '{a.Subject}' seen={a2?.Seen} flagged={a2?.Flagged}");
+                    log.AppendLine($"archive has '{b.Subject}': {s.Messages(s.FolderByRole("archive").FullName).Any(x => x.Subject == b.Subject)}");
+                    log.AppendLine($"trash has '{c.Subject}' after erasing: {s.Messages(trash.FullName).Any(x => x.Subject == c.Subject)}");
+                    break;
+            }
+            log.AppendLine("error: " + (s.Error ?? "none"));
+        }
+        catch (Exception ex) { log.AppendLine("exception: " + ex); }
+        File.WriteAllText(Path.Combine(Settings.DataDirectory, "mailtest.txt"), log.ToString());
+    }
+
     static void Snapshot(string title)
     {
         var w = Application.Current.Windows.Cast<Window>().FirstOrDefault(x => x.Title == title);
@@ -485,6 +598,7 @@ public static class ShellHost
             case "internal:launchpad": LaunchpadWindow.Toggle(); break;
             case "internal:settings": SettingsWindow.ShowPane(null); break;
             case Apps.Preview.PreviewWindow.AppId: Apps.Preview.PreviewWindow.OpenApp(); break;
+            case Apps.Mail.MailWindow.AppId: Apps.Mail.MailWindow.OpenApp(); break;
             case "internal:missioncontrol": MissionControlWindow.Toggle(); break;
             case "internal:trash": OpenFinder(FinderLocation.Trash); break;
             case "internal:downloads": OpenFinder(GetKnownFolder(FOLDERID_Downloads)); break;
@@ -495,6 +609,11 @@ public static class ShellHost
     {
         if (key == "internal:settings") SettingsWindow.Instance?.Close();
         else if (key == Apps.Preview.PreviewWindow.AppId) { foreach (var w in Apps.Preview.PreviewWindow.All.ToList()) w.Close(); Apps.Preview.PreviewPanels.CloseAll(); }
+        else if (key == Apps.Mail.MailWindow.AppId)
+        {
+            // (its windows: the accounts keep being checked, for the Dock badge and new-mail banners)
+            foreach (var w in Application.Current.Windows.OfType<Window>().Where(w => w is Apps.Mail.MailWindow or Apps.Mail.MailComposeWindow or Apps.Mail.MailSetupWindow).ToList()) w.Close();
+        }
         else if (key == WindowTracker.FinderKey) foreach (var w in FinderWindow.All.ToList()) w.Close();
     }
 
@@ -503,7 +622,7 @@ public static class ShellHost
         var wins = FinderWindow.All.ToList();
         if (wins.Count == 0) { OpenFinder(null); return; }
         var app = WindowTracker.FindByKey(WindowTracker.FinderKey);
-        if (app != null && app.Windows.Count > 0) WindowTracker.ActivateApp(app);
+        if (app != null && app.Windows.Count > 0) { if (!WindowTracker.CycleWindows(app)) WindowTracker.ActivateApp(app); }
         else { var w = wins.Last(); if (w.WindowState == WindowState.Minimized) w.WindowState = WindowState.Normal; w.Activate(); }
     }
 
@@ -591,17 +710,32 @@ public static class ShellHost
         t.Start();
     }
 
-    /// <summary>Sends a keyboard shortcut to the frontmost external app (used by generic app menus).</summary>
+    /// <summary>Sends a keyboard shortcut to the frontmost external app (the menu bar's menus for it): once the menu
+    /// has closed and that app is in front - never to whatever else is (it's given up after a third of a second).</summary>
     public static void SendToApp(params ushort[] keys)
     {
         var target = WindowTracker.LastExternalForeground;
-        if (target != IntPtr.Zero && IsWindow(target))
+        if (target == IntPtr.Zero || !IsWindow(target)) return;
+        GetWindowThreadProcessId(target, out uint pid);
+        bool InFront()
         {
-            ActivateWindow(target);
-            var t = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(60) };
-            t.Tick += (_, _) => { t.Stop(); SendKeys(keys); };
-            t.Start();
+            var fg = GetForegroundWindow();
+            if (fg == target || GetAncestor(fg, GA_ROOTOWNER) == target) return true;
+            GetWindowThreadProcessId(fg, out uint fgPid);
+            return fg != IntPtr.Zero && fgPid == pid;   // (one of its own dialogs or windows)
         }
+        if (!InFront()) ActivateWindow(target);
+        int tries = 0;
+        var t = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(40) };
+        t.Tick += (_, _) =>
+        {
+            bool front = InFront();
+            if (!front && tries == 3) ActivateWindow(target);
+            if (!front && ++tries < 8) return;
+            t.Stop();
+            if (front) SendKeys(keys);
+        };
+        t.Start();
     }
 
     // ------------------------------------------------------------------ power

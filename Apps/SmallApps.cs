@@ -184,6 +184,9 @@ public class ForceQuitWindow : MacWindow
             return;
         }
         if (ShellHost.Alert($"Do you want to force “{app.Name}” to quit?", "You will lose any unsaved changes.", "Cancel", "Force Quit") == "Force Quit")
-            WindowTracker.ForceQuitApp(app);
+        {
+            // (a web app a browser runs, or windows of Windows' own processes: closing its windows is as far as it goes)
+            if (WindowTracker.ForceQuitPids(app).Count > 0) WindowTracker.ForceQuitApp(app); else WindowTracker.QuitApp(app);
+        }
     }
 }

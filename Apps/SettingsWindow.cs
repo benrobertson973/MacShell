@@ -507,6 +507,7 @@ public class SettingsWindow : MacWindow
         var s = Settings.Current;
         SectionTitle("Menu Bar");
         Group(
+            MenuBarRow("Weather", "weather"),
             MenuBarRow("Timer", "timer"),
             MenuBarRow("Battery", "battery"),
             MenuBarRow("Wi‑Fi", "wifi"),
@@ -519,6 +520,8 @@ public class SettingsWindow : MacWindow
         var tip = Txt("Tip: hold Alt and drag an icon out of the menu bar to take it out.", 11, brush: "SecondaryLabelBrush");
         tip.Margin = new Thickness(4, -4, 0, 4);
         _content.Children.Add(tip);
+        SectionTitle("Weather");
+        Group(WeatherLocationRow());
         SectionTitle("Clock");
         Group(
             Row("Show date", Switch(s.ClockShowDate, v => { Settings.Current.ClockShowDate = v; Save(); })),
@@ -534,6 +537,34 @@ public class SettingsWindow : MacWindow
                 Settings.Current.TimerSound = CountdownTimer.Sounds[i]; Save();
                 CountdownTimer.Preview(CountdownTimer.Sounds[i]);
             }), "Click 00:00 in the menu bar, then type 5:00 for 5 minutes, or a time like 5:30pm"));
+    }
+
+    /// <summary>The weather's place - where this computer is, or a city chosen - kept up to date while it shows.</summary>
+    UIElement WeatherLocationRow()
+    {
+        var holder = new Border();
+        void Fill()
+        {
+            var change = new Button { Content = "Change…", Style = (Style)Application.Current.Resources["MacButton"] };
+            change.Click += (_, _) => Shell.WeatherPopover.ChangeLocation(this);
+            var buttons = new StackPanel { Orientation = Orientation.Horizontal };
+            if (!Weather.Automatic)
+            {
+                var mine = new Button { Content = "Use My Location", Style = (Style)Application.Current.Resources["MacButton"], Margin = new Thickness(0, 0, 8, 0) };
+                mine.Click += (_, _) => Weather.SetPlace(null, null, null);
+                buttons.Children.Add(mine);
+            }
+            buttons.Children.Add(change);
+            string place = Weather.PlaceName;
+            string sub = Weather.Automatic
+                ? (string.IsNullOrEmpty(place) ? "Where this computer is (from its internet connection)" : $"Where this computer is: about {place}")
+                : place;
+            holder.Child = Row("Location", buttons, sub + " · temperatures in °F");
+        }
+        Fill();
+        Weather.Changed += Fill;
+        holder.Unloaded += (_, _) => Weather.Changed -= Fill;
+        return holder;
     }
 
     /// <summary>A "show in the menu bar" switch for one menu bar item (an app's: with its icon).</summary>

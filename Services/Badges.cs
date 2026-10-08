@@ -58,10 +58,18 @@ public static class Badges
         });
     }
 
+    /// <summary>Badges shown again (MacShell's own apps' counts changed, e.g. Mail's unread).</summary>
+    public static void Refresh() => Changed?.Invoke();
+
     /// <summary>Badge text for a Dock app (null = no badge).</summary>
     public static string For(string key, string target, RunningApp running)
     {
         if (!Settings.Current.DockShowBadges) return null;
+        if (key == Apps.Mail.MailWindow.AppId || target == Apps.Mail.MailWindow.AppId)
+        {
+            int unread = Apps.Mail.MailService.UnreadInboxes;
+            return unread > 0 ? Format(unread) : null;
+        }
         var ids = new List<string>();
         if (key != null)
         {

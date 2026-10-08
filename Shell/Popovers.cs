@@ -91,6 +91,23 @@ public class Popover : Window
     {
         try { Process.Start(new ProcessStartInfo(uri) { UseShellExecute = true }); } catch { }
     }
+
+    protected static Border Separator()
+    {
+        var b = new Border { Height = 1, Margin = new Thickness(6, 4, 6, 4) };
+        b.SetResourceReference(Border.BackgroundProperty, "SeparatorBrush");
+        return b;
+    }
+
+    /// <summary>A menu-like row ("Sound Settings…") that highlights under the mouse.</summary>
+    protected static Border Link(string text, Action click)
+    {
+        var row = new Border { CornerRadius = new CornerRadius(6), Padding = new Thickness(8, 5, 8, 5), Background = Brushes.Transparent, Child = T(text, 13) };
+        row.MouseEnter += (_, _) => row.SetResourceReference(Border.BackgroundProperty, "HoverBrush");
+        row.MouseLeave += (_, _) => row.Background = Brushes.Transparent;
+        row.MouseLeftButtonUp += (_, _) => click();
+        return row;
+    }
 }
 
 public class ControlCenterWindow : Popover
@@ -412,22 +429,6 @@ public class SoundPopover : Popover
             row.MouseLeftButtonUp += (_, _) => { AudioVolume.SetDefaultDevice(id); FillDevices(); };
             _devices.Children.Add(row);
         }
-    }
-
-    static Border Separator()
-    {
-        var b = new Border { Height = 1, Margin = new Thickness(6, 4, 6, 4) };
-        b.SetResourceReference(Border.BackgroundProperty, "SeparatorBrush");
-        return b;
-    }
-
-    static Border Link(string text, Action click)
-    {
-        var row = new Border { CornerRadius = new CornerRadius(6), Padding = new Thickness(8, 5, 8, 5), Background = Brushes.Transparent, Child = T(text, 13) };
-        row.MouseEnter += (_, _) => row.SetResourceReference(Border.BackgroundProperty, "HoverBrush");
-        row.MouseLeave += (_, _) => row.Background = Brushes.Transparent;
-        row.MouseLeftButtonUp += (_, _) => click();
-        return row;
     }
 }
 

@@ -128,11 +128,29 @@ public static class MacIcons
         return Freeze(dg);
     });
 
+    // ------------------------------------------------------------------ Mail: a white envelope on blue
+    public static ImageSource Mail => Cached("mail", () =>
+    {
+        var dg = new DrawingGroup();
+        AppBase(dg, VGrad("#5DB8FF", "#1A6CF0"));
+        var body = new RectangleGeometry(new Rect(17, 29, 66, 44), 5, 5);
+        dg.Children.Add(new GeometryDrawing(new SolidColorBrush(Color.FromArgb(46, 0, 30, 90)), null, new RectangleGeometry(new Rect(17, 31.5, 66, 44), 5, 5)));
+        dg.Children.Add(new GeometryDrawing(VGrad("#FFFFFF", "#E6ECF4"), null, body));
+        var clip = new DrawingGroup { ClipGeometry = body };
+        var fold = new Pen(Solid("#C9D4E2"), 1.6) { LineJoin = PenLineJoin.Round };
+        clip.Children.Add(new GeometryDrawing(null, fold, G("M17,73 L42.5,50 M83,73 L57.5,50")));
+        clip.Children.Add(new GeometryDrawing(VGrad("#FFFFFF", "#EEF2F8"), new Pen(Solid("#B8C5D6"), 1.8) { LineJoin = PenLineJoin.Round }, G("M15,28 L50,55.5 L85,28 Z")));
+        dg.Children.Add(clip);
+        dg.Children.Add(new GeometryDrawing(null, new Pen(new SolidColorBrush(Color.FromArgb(30, 0, 0, 0)), 0.6), AppShape));
+        return Freeze(dg);
+    });
+
     /// <summary>The icon of one of MacShell's own apps (internal:*).</summary>
     public static ImageSource ForInternal(string key) => key switch
     {
         "internal:settings" => SystemSettings,
         "internal:preview" => Preview,
+        "internal:mail" => Mail,
         _ => Finder,
     };
 

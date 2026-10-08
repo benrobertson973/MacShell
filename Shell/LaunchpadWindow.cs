@@ -90,6 +90,7 @@ public class LaunchpadWindow : Window
         _apps = AppCatalog.Apps.ToList();
         // MacShell's own apps live in Launchpad too
         if (_apps.All(a => a.ParsingName != Apps.Preview.PreviewWindow.AppId)) _apps.Add(new AppEntry { Name = "Preview", ParsingName = Apps.Preview.PreviewWindow.AppId });
+        if (_apps.All(a => a.ParsingName != Apps.Mail.MailWindow.AppId)) _apps.Add(new AppEntry { Name = "Mail", ParsingName = Apps.Mail.MailWindow.AppId });
         Loaded += (_, _) => { Layout(); BuildPages(); AnimateIn(); _search.Focus(); };
         Deactivated += (_, _) => CloseAnimated();
         PreviewKeyDown += OnKey;

@@ -25,8 +25,11 @@ public class MenuBarWindow : Window
     readonly StackPanel _right = new() { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 0, 8, 0) };
     readonly TextBlock _clock = new() { VerticalAlignment = VerticalAlignment.Center };
     readonly TextBlock _timerText = new() { VerticalAlignment = VerticalAlignment.Center };
+    readonly TextBlock _weatherText = new() { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(4, 0, 0, 0) };
     readonly SolidColorBrush _text = new(Colors.Black);
-    StatusButton _ccButton, _clockButton, _wifiButton, _batteryButton, _timerButton, _soundButton, _searchButton;
+    StatusButton _ccButton, _clockButton, _wifiButton, _batteryButton, _timerButton, _weatherButton, _soundButton, _searchButton;
+    SymbolIcon _weatherIcon;
+    bool _weatherWasHidden;
     BatteryIcon _battery;
     TextBlock _batteryPct;
     SymbolIcon _wifiIcon, _soundIcon;
@@ -84,6 +87,7 @@ public class MenuBarWindow : Window
         Settings.Changed += UpdateClock;
         Settings.Changed += ApplyHidden;
         CountdownTimer.Changed += UpdateTimer;
+        Weather.Changed += UpdateWeather;
         TrayHost.Changed += RebuildTrayIcons;
 
         var timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
@@ -142,6 +146,15 @@ public class MenuBarWindow : Window
     void BuildStatusItems()
     {
         _right.Children.Clear();
+        // the weather: the sky and the temperature (°F); a click: the forecast
+        _weatherIcon = new SymbolIcon { Symbol = "cloud", Width = 17, Height = 17, StrokeWidth = 1.8, Foreground = _text, VerticalAlignment = VerticalAlignment.Center };
+        _weatherText.Foreground = _text;
+        var wp = new StackPanel { Orientation = Orientation.Horizontal };
+        wp.Children.Add(_weatherIcon);
+        wp.Children.Add(_weatherText);
+        _weatherButton = new StatusButton(wp, b => WeatherPopover.Toggle(b)) { HideKey = "weather", HideName = "Weather" };
+        _weatherWasHidden = IsHidden("weather");
+        _right.Children.Add(_weatherButton);
         // the timer: "00:00", counting down once set; a click while its alarm rings stops it
         _timerText.Foreground = _text;
         System.Windows.Documents.Typography.SetNumeralAlignment(_timerText, FontNumeralAlignment.Tabular);
@@ -298,10 +311,31 @@ public class MenuBarWindow : Window
     /// <summary>Diagnostics (--open timerpop): the timer's drop-down, as clicking "00:00" opens it.</summary>
     public void ToggleTimerPopover() => TimerPopover.Toggle(_timerButton);
 
+    /// <summary>The sky's glyph and "72°" - not there until the weather is first known (no placeholder flashing by at
+    /// startup), "--°" once it's hours old (offline since).</summary>
+    void UpdateWeather()
+    {
+        if (_weatherButton == null) return;
+        bool hidden = IsHidden("weather");
+        if (_weatherWasHidden && !hidden) Weather.Shown();   // (put back: fetched now if it's old)
+        _weatherWasHidden = hidden;
+        // (once shown, it stays - "--°" while a new place's weather comes - so the items beside it don't shift)
+        bool tried = Weather.Temperature != null || Weather.Error != null || _weatherButton.Visibility == Visibility.Visible;
+        _weatherButton.Visibility = hidden || !tried ? Visibility.Collapsed : Visibility.Visible;
+        bool current = Weather.Current;
+        _weatherIcon.Symbol = current ? Weather.Symbol(Weather.Code, Weather.IsDay) : "cloud";
+        _weatherText.Text = Weather.Degrees(current ? Weather.Temperature : null);
+    }
+
+    /// <summary>Diagnostics (--open weatherpop): the weather's drop-down, as clicking it opens it.</summary>
+    public void ToggleWeatherPopover() => WeatherPopover.Toggle(_weatherButton);
+    /// <summary>Diagnostics: what the menu bar shows for the weather ("Collapsed", or the glyph and the text).</summary>
+    public string WeatherShown => _weatherButton?.Visibility != Visibility.Visible ? "no" : $"{_weatherIcon.Symbol} {_weatherText.Text}";
+
     // ------------------------------------------------------------------ taking items out of the menu bar
 
     /// <summary>Items can be taken out of the menu bar (Settings › Control Center, or Alt-drag them out, like ⌘-drag
-    /// on a Mac): the timer, battery, Wi-Fi, sound and Spotlight items, and apps' icons ("app:&lt;exe name&gt;").</summary>
+    /// on a Mac): the weather, timer, battery, Wi-Fi, sound and Spotlight items, and apps' icons ("app:&lt;exe name&gt;").</summary>
     public static bool IsHidden(string key) => key != null && Settings.Current.MenuBarHidden.ContainsKey(key);
 
     public static void SetHidden(string key, string name, bool hidden)
@@ -319,6 +353,7 @@ public class MenuBarWindow : Window
         _soundButton.Visibility = IsHidden("sound") ? Visibility.Collapsed : Visibility.Visible;
         _searchButton.Visibility = IsHidden("spotlight") ? Visibility.Collapsed : Visibility.Visible;
         UpdateTimer();
+        UpdateWeather();
         UpdateStatus();
         RebuildTrayIcons();
     }
@@ -352,15 +387,19 @@ public class MenuBarWindow : Window
     {
         var list = new List<(string key, string name, ImageSource image)>();
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var hidden = Settings.Current.MenuBarHidden;
         foreach (var icon in TrayHost.Icons.Where(i => !i.Hidden && i.Image != null).OrderByDescending(i => i.Order))
         {
             var (key, name) = TrayApp(icon);
-            if (seen.Add(key)) list.Add((key, name, icon.Image));
+            if (!seen.Add(key)) continue;
+            list.Add((key, name, icon.Image));
+            // (a name kept as its key - "app:discord.exe" - is put right while the app is here to ask)
+            if (hidden.TryGetValue(key, out var kept) && kept == key && name != key) { hidden[key] = name; Settings.Save(notify: false); }
         }
-        foreach (var (key, name) in Settings.Current.MenuBarHidden)
+        foreach (var (key, name) in hidden)
         {
             bool app = key.StartsWith("app:") || key.StartsWith("tip:");
-            if (app && seen.Add(key)) list.Add((key, name, null));
+            if (app && seen.Add(key)) list.Add((key, name != key ? name : System.IO.Path.GetFileNameWithoutExtension(key[4..].Split('#')[0]), null));
         }
         return list;
     }
@@ -523,7 +562,27 @@ public class MenuBarWindow : Window
         if (app == null || app.Key == WindowTracker.FinderKey) AddFinderMenus();
         else if (app.Key == "internal:settings") AddSettingsMenus();
         else if (app.Key == Apps.Preview.PreviewWindow.AppId) AddPreviewMenus();
+        else if (app.Key == Apps.Mail.MailWindow.AppId) AddMailMenus();
         else AddAppMenus(app);
+    }
+
+    void AddMailMenus()
+    {
+        _menu.Items.Add(LiveMenu("Mail", Apps.Mail.MailWindow.MenuMail));
+        ((TextBlock)((MenuItem)_menu.Items[^1]).Header).FontWeight = FontWeights.Bold;
+        _menu.Items.Add(LiveMenu("File", Apps.Mail.MailWindow.MenuFile));
+        _menu.Items.Add(TopMenu("Edit", false,
+            Mb.Item("Undo", () => ShellHost.SendToApp(0x11, 0x5A), "⌘Z"),
+            Mb.Sep(),
+            Mb.Item("Cut", () => ApplicationCommands.Cut.Execute(null, Keyboard.FocusedElement), "⌘X"),
+            Mb.Item("Copy", () => ApplicationCommands.Copy.Execute(null, Keyboard.FocusedElement), "⌘C"),
+            Mb.Item("Paste", () => ApplicationCommands.Paste.Execute(null, Keyboard.FocusedElement), "⌘V"),
+            Mb.Item("Select All", () => ApplicationCommands.SelectAll.Execute(null, Keyboard.FocusedElement), "⌘A")));
+        _menu.Items.Add(LiveMenu("View", Apps.Mail.MailWindow.MenuView));
+        _menu.Items.Add(LiveMenu("Mailbox", Apps.Mail.MailWindow.MenuMailbox));
+        _menu.Items.Add(LiveMenu("Message", Apps.Mail.MailWindow.MenuMessage));
+        _menu.Items.Add(WindowMenu(WindowTracker.FindByKey(Apps.Mail.MailWindow.AppId)));
+        _menu.Items.Add(HelpMenu("Mail"));
     }
 
     /// <summary>A menu whose items are rebuilt every time it opens (enabled states follow the front document).</summary>
@@ -727,21 +786,26 @@ public class MenuBarWindow : Window
     void AddAppMenus(RunningApp app)
     {
         string name = app.Name ?? "App";
-        _menu.Items.Add(TopMenu(name, true,
-            Mb.Item($"About {name}", () => AboutApp(app)),
-            Mb.Sep(),
-            Mb.Item("Settings…", () => ShellHost.SendToApp(0x11, 0xBC), "⌘,"),
-            Mb.Sep(),
+        // Classic Win32 apps: mirror their real menu bar (global menu, just like a Mac); others: what that app can do
+        var hwnd = WindowTracker.LastExternalForeground;
+        IntPtr hmenu = hwnd != IntPtr.Zero ? GetMenu(hwnd) : IntPtr.Zero;
+        var native = hmenu != IntPtr.Zero ? NativeMenu.Read(hmenu, hwnd) : new List<NativeMenuItem>();
+        List<(string title, object[] items)> known = null;
+        ushort[] settings = null;
+        if (native.Count == 0) (known, settings) = AppMenus.For(app, hwnd);
+
+        var appMenu = new List<object> { Mb.Item($"About {name}", () => AboutApp(app)), Mb.Sep() };
+        if (settings != null) { appMenu.Add(Mb.Item("Settings…", () => ShellHost.SendToApp(settings), AppMenus.Gesture(settings))); appMenu.Add(Mb.Sep()); }
+        appMenu.AddRange(new object[]
+        {
             Mb.Item($"Hide {name}", () => WindowTracker.HideApp(app), "⌘H"),
             Mb.Item("Hide Others", HideOthers, "⌥⌘H"),
             Mb.Item("Show All", ShowAll),
             Mb.Sep(),
-            Mb.Item($"Quit {name}", () => WindowTracker.QuitApp(app), "⌘Q")));
+            Mb.Item($"Quit {name}", () => WindowTracker.QuitApp(app), "⌘Q"),
+        });
+        _menu.Items.Add(TopMenu(name, true, appMenu.ToArray()));
 
-        // Classic Win32 apps: mirror their real menu bar (global menu, just like a Mac).
-        var hwnd = WindowTracker.LastExternalForeground;
-        IntPtr hmenu = hwnd != IntPtr.Zero ? GetMenu(hwnd) : IntPtr.Zero;
-        var native = hmenu != IntPtr.Zero ? NativeMenu.Read(hmenu, hwnd) : new List<NativeMenuItem>();
         if (native.Count > 0)
         {
             int idx = 0;
@@ -764,36 +828,7 @@ public class MenuBarWindow : Window
             }
         }
         else
-        {
-            _menu.Items.Add(TopMenu("File", false,
-                Mb.Item("New Window", () => ShellHost.SendToApp(0x11, 0x4E), "⌘N"),
-                Mb.Item("New Tab", () => ShellHost.SendToApp(0x11, 0x54), "⌘T"),
-                Mb.Item("Open…", () => ShellHost.SendToApp(0x11, 0x4F), "⌘O"),
-                Mb.Sep(),
-                Mb.Item("Close Window", () => PostMessage(WindowTracker.LastExternalForeground, WM_CLOSE, IntPtr.Zero, IntPtr.Zero), "⌘W"),
-                Mb.Item("Save", () => ShellHost.SendToApp(0x11, 0x53), "⌘S"),
-                Mb.Item("Save As…", () => ShellHost.SendToApp(0x11, 0x10, 0x53), "⇧⌘S"),
-                Mb.Sep(),
-                Mb.Item("Print…", () => ShellHost.SendToApp(0x11, 0x50), "⌘P")));
-            _menu.Items.Add(TopMenu("Edit", false,
-                Mb.Item("Undo", () => ShellHost.SendToApp(0x11, 0x5A), "⌘Z"),
-                Mb.Item("Redo", () => ShellHost.SendToApp(0x11, 0x59), "⇧⌘Z"),
-                Mb.Sep(),
-                Mb.Item("Cut", () => ShellHost.SendToApp(0x11, 0x58), "⌘X"),
-                Mb.Item("Copy", () => ShellHost.SendToApp(0x11, 0x43), "⌘C"),
-                Mb.Item("Paste", () => ShellHost.SendToApp(0x11, 0x56), "⌘V"),
-                Mb.Item("Select All", () => ShellHost.SendToApp(0x11, 0x41), "⌘A"),
-                Mb.Sep(),
-                Mb.Item("Find…", () => ShellHost.SendToApp(0x11, 0x46), "⌘F"),
-                Mb.Sep(),
-                Mb.Item("Emoji & Symbols", () => ShellHost.SendToApp(0x5B, 0xBE), "fn E")));
-            _menu.Items.Add(TopMenu("View", false,
-                Mb.Item("Actual Size", () => ShellHost.SendToApp(0x11, 0x30), "⌘0"),
-                Mb.Item("Zoom In", () => ShellHost.SendToApp(0x11, 0xBB), "⌘+"),
-                Mb.Item("Zoom Out", () => ShellHost.SendToApp(0x11, 0xBD), "⌘−"),
-                Mb.Sep(),
-                Mb.Item("Enter Full Screen", () => ShellHost.SendToApp(0x7A), "⌃⌘F")));
-        }
+            foreach (var (title, items) in known) _menu.Items.Add(TopMenu(title, false, items));
         _menu.Items.Add(WindowMenu(app));
         _menu.Items.Add(HelpMenu(name));
     }

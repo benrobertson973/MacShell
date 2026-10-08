@@ -65,7 +65,7 @@ public class AppSettings
     public bool ReplaceAltTab { get; set; } = true;
     public bool AltSpaceSpotlight { get; set; } = true;
     public bool SoundEffects { get; set; } = true;
-    /// <summary>Menu bar items taken out of the menu bar: "timer", "battery", "wifi", "sound", "spotlight", or an app's
+    /// <summary>Menu bar items taken out of the menu bar: "weather", "timer", "battery", "wifi", "sound", "spotlight", or an app's
     /// icons ("app:discord.exe") → the name shown in Settings.</summary>
     public Dictionary<string, string> MenuBarHidden { get; set; } = new(StringComparer.OrdinalIgnoreCase);
     /// <summary>The timer's last length in seconds: what the timer offers next time (see Services/CountdownTimer.cs).</summary>
@@ -80,6 +80,24 @@ public class AppSettings
     /// <summary>Eating mode (the timer starts over every this many seconds, with a soft chime) and its minutes so far.</summary>
     public double? TimerRepeatSeconds { get; set; }
     public int TimerCycles { get; set; }
+    /// <summary>The weather's place, chosen in Settings (null: automatic), and the automatic one last found (and when).</summary>
+    public string WeatherPlace { get; set; }
+    public double? WeatherLat { get; set; }
+    public double? WeatherLon { get; set; }
+    public string WeatherAutoPlace { get; set; }
+    public double? WeatherAutoLat { get; set; }
+    public double? WeatherAutoLon { get; set; }
+    public DateTime WeatherAutoAt { get; set; }
+    /// <summary>Mail: a banner and a sound when new mail arrives; Mail added to the Dock once (its first time).</summary>
+    public bool MailNotify { get; set; } = true;
+    public bool MailPinned { get; set; }
+    /// <summary>Mail's window: the sidebar's and the message list's widths, where it was and how big (DIPs: left, top,
+    /// width, height - its size before it was zoomed, if it was), and whether it was zoomed; a new message's size.</summary>
+    public double MailSidebarWidth { get; set; } = 210;
+    public double MailListWidth { get; set; } = 330;
+    public double[] MailWindowBounds { get; set; }
+    public bool MailWindowZoomed { get; set; }
+    public double[] MailComposeSize { get; set; }
     /// <summary>Where eating mode's little window was dragged to (DIPs); null: the top right.</summary>
     public double? EatingHudLeft { get; set; }
     public double? EatingHudTop { get; set; }
