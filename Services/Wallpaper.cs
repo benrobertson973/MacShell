@@ -34,8 +34,11 @@ public static class Wallpaper
 
     static string CacheDir => Path.Combine(Settings.DataDirectory, "wallpapers");
 
+    /// <summary>The size the wallpaper is made at: the main display's, inside any screen edges cut off.</summary>
     public static (int w, int h) ScreenPixels()
     {
+        var s = ShellHost.ScreenPx;
+        if (s.Width > 0 && s.Height > 0) return (Math.Max(640, s.Width), Math.Max(480, s.Height));
         var mons = NativeMethods.GetMonitors();
         var p = mons.FirstOrDefault(m => m.primary);
         if (p.handle == IntPtr.Zero && mons.Count > 0) p = mons[0];

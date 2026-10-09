@@ -89,6 +89,12 @@ public class DesktopWindow : Window
             WireInput();
         }
         Content = _root;
+        if (primary)
+        {
+            // the screen edges cut off stay black: the wallpaper and the icons are inside what can be seen
+            var t = ShellHost.TrimPx;
+            _root.Margin = new Thickness(t.Left / ShellHost.Scale, t.Top / ShellHost.Scale, t.Right / ShellHost.Scale, t.Bottom / ShellHost.Scale);
+        }
         Left = bounds.Left / ShellHost.Scale; Top = bounds.Top / ShellHost.Scale;
         Width = bounds.Width / ShellHost.Scale; Height = bounds.Height / ShellHost.Scale;
         ApplyWallpaper();
@@ -360,23 +366,27 @@ public class DesktopWindow : Window
         Resources["DesktopLabelWidth"] = _cellW - 6;
         _top = ShellHost.MenuBarHeight + 10;
         double bottomReserve = (ShellHost.Dock?.ReservedHeight ?? 70) + 10;
-        _rows = Math.Max(1, (int)((Height - _top - bottomReserve) / _cellH));
+        _rows = Math.Max(1, (int)((AreaH - _top - bottomReserve) / _cellH));
     }
+
+    /// <summary>The part of the desktop that can be seen: on the main display, inside the screen edges cut off.</summary>
+    double AreaW => IsPrimary ? ShellHost.ScreenDip.Width : Width;
+    double AreaH => IsPrimary ? ShellHost.ScreenDip.Height : Height;
 
     Point GridSlot(int i)
     {
         int col = i / _rows, row = i % _rows;
-        double x = Math.Max(4, Width - 14 - (col + 1) * _cellW);
+        double x = Math.Max(4, AreaW - 14 - (col + 1) * _cellW);
         return new Point(x, _top + row * _cellH);
     }
 
-    int GridColumns => Math.Max(1, (int)((Width - 18) / _cellW));
+    int GridColumns => Math.Max(1, (int)((AreaW - 18) / _cellW));
     Rect CellRect(Point p) => new(p, new Size(_cellW, _cellH));
     static Rect Shrink(Rect r) { r.Inflate(-12, -12); return r; }
 
     Point ClampPos(Point p) => new(
-        Math.Clamp(p.X, 0, Math.Max(0, Width - _cellW)),
-        Math.Clamp(p.Y, ShellHost.MenuBarHeight + 2, Math.Max(ShellHost.MenuBarHeight + 2, Height - _cellH)));
+        Math.Clamp(p.X, 0, Math.Max(0, AreaW - _cellW)),
+        Math.Clamp(p.Y, ShellHost.MenuBarHeight + 2, Math.Max(ShellHost.MenuBarHeight + 2, AreaH - _cellH)));
 
     void Place(FileItem it, Point p)
     {

@@ -112,16 +112,28 @@ public static class ShellHost
         };
         Settings.Changed += () => UpdateWorkArea();
 
-        // First launch: open a Finder window, just like logging in to a Mac.
-        UI.BeginInvoke(() => { }, DispatcherPriority.ApplicationIdle);
+        // First launch: can the whole screen be seen? (a TV or a covered edge cuts some off - Screen Edges)
+        if (Settings.IsFirstRun && !Settings.Current.ScreenTrimAsked && !Offscreen)
+            UI.BeginInvoke(() => ScreenEdgesWindow.Open(firstRun: true), DispatcherPriority.ApplicationIdle);
     }
+
+    /// <summary>The main display, all of it (pixels) - <see cref="ScreenPx"/> is what's left of it inside the screen edges
+    /// cut off (Settings › Displays › Screen Edges).</summary>
+    public static RECT MonitorPx { get; private set; }
+    /// <summary>The screen edges cut off (pixels), as they apply to this display (no more than leaves half of it).</summary>
+    public static (int Left, int Top, int Right, int Bottom) TrimPx { get; private set; }
 
     static void ComputeMetrics()
     {
         var mons = GetMonitors();
         var primary = mons.FirstOrDefault(m => m.primary);
         if (primary.handle == IntPtr.Zero && mons.Count > 0) primary = mons[0];
-        ScreenPx = primary.bounds;
+        MonitorPx = primary.bounds;
+        var t = Settings.Current.ScreenTrim is { Length: 4 } st ? st : new int[4];
+        int w = MonitorPx.Width, h = MonitorPx.Height;
+        int l = Math.Clamp(t[0], 0, w / 4), r = Math.Clamp(t[2], 0, w / 4), tp = Math.Clamp(t[1], 0, h / 4), b = Math.Clamp(t[3], 0, h / 4);
+        TrimPx = (l, tp, r, b);
+        ScreenPx = new RECT(MonitorPx.Left + l, MonitorPx.Top + tp, MonitorPx.Right - r, MonitorPx.Bottom - b);
         // the primary display's scale now (the system DPI stays what it was at sign-in, even after the scale changes
         // with a new resolution - and MacShell's windows follow the display's)
         Scale = primary.handle != IntPtr.Zero && GetDpiForMonitor(primary.handle, 0, out uint dpi, out _) == 0 && dpi > 0
@@ -226,8 +238,14 @@ public static class ShellHost
     public static void UpdateWorkArea(bool force = false)
     {
         if (!TakeoverEnabled || Dock == null || MenuBar == null) return;
-        Takeover.Reserve(MenuBar.Handle, (int)Math.Round(MenuBarHeight * Scale), Dock.Handle, (int)Math.Round(Dock.ReservedHeight * Scale), force);
+        // (the screen edges cut off are kept out of the work area too: maximized windows fit inside what's left)
+        var t = TrimPx;
+        Takeover.Reserve(MenuBar.Handle, t.Top + (int)Math.Round(MenuBarHeight * Scale), Dock.Handle, t.Bottom + (int)Math.Round(Dock.ReservedHeight * Scale),
+                         t.Left, t.Right, force);
     }
+
+    /// <summary>The screen edges cut off were changed (Settings › Displays): everything laid out again inside them.</summary>
+    public static void ApplyScreenTrim() => OnDisplayChanged();
 
     public static bool IsDesktopWindow(IntPtr h) => Desktops.Any(d => d.Handle == h);
 
@@ -352,6 +370,22 @@ public static class ShellHost
                     .Where(a => !a.IsInternal && a.Windows.Count > 0 && GetMenu(a.Windows[0].Hwnd) == IntPtr.Zero)
                     .Select(a => AppMenus.Describe(a, a.Windows[0].Hwnd))));
                 break;
+            case "mailfetchtest":   // diagnostics: each account downloads one Inbox message not yet downloaded (read-only; it stays unread) → mail.log
+                foreach (var s in Apps.Mail.MailService.All)
+                    if (s.FolderByRole("inbox") is { } ibx && s.Messages(ibx.FullName).FirstOrDefault(m => !File.Exists(Apps.Mail.MailStore.MessageFile(m)) && m.Size < 2_000_000) is { } one)
+                        _ = s.GetMessageAsync(one);
+                break;
+            case "screenedges": ScreenEdgesWindow.Open(firstRun: arg == "first"); break;   // the Screen Edges screen (screenedges:first - as on a first run)
+            case "screentrim":   // diagnostics: screentrim:<left>,<top>,<right>,<bottom> (pixels) - screentrim: alone, none
+                {
+                    var v = (arg ?? "").Split(',').Select(x => int.TryParse(x.Trim(), out int n) ? n : 0).ToArray();
+                    Settings.Current.ScreenTrim = v.Length == 4 && v.Any(n => n > 0) ? v : null;
+                    Settings.Save(notify: false);
+                    ApplyScreenTrim();
+                    File.WriteAllText(Path.Combine(Settings.DataDirectory, "screentrim.txt"),
+                        $"monitor={MonitorPx.Left},{MonitorPx.Top} {MonitorPx.Width}x{MonitorPx.Height} visible={ScreenPx.Left},{ScreenPx.Top} {ScreenPx.Width}x{ScreenPx.Height} trim={TrimPx}");
+                    break;
+                }
             case "mailstate":   // diagnostics: what Mail's front window shows (counts only) → mailstate.txt
                 File.WriteAllText(Path.Combine(Settings.DataDirectory, "mailstate.txt"), Apps.Mail.MailWindow.TestState());
                 break;

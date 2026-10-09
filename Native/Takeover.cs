@@ -259,18 +259,45 @@ public static class Takeover
 
     /// <summary>
     /// Reserves <paramref name="topPx"/> at the top (menu bar) and <paramref name="bottomPx"/> at the bottom (Dock)
-    /// of the primary display. Only talks to Explorer when a thickness actually changes.
+    /// of the primary display, and <paramref name="leftPx"/> / <paramref name="rightPx"/> at its sides (screen edges cut
+    /// off: two hidden app bars hold them). Only talks to Explorer when a thickness actually changes.
     /// </summary>
-    public static void Reserve(IntPtr menuBar, int topPx, IntPtr dock, int bottomPx, bool force = false)
+    public static void Reserve(IntPtr menuBar, int topPx, IntPtr dock, int bottomPx, int leftPx = 0, int rightPx = 0, bool force = false)
     {
         if (!Engaged) return;
         if (!ExplorerRunning)
         {
-            FallbackWorkArea(topPx, bottomPx);
+            FallbackWorkArea(topPx, bottomPx, leftPx, rightPx);
             return;
         }
         SetBar(menuBar, ABE_TOP, topPx, force);
         SetBar(dock, ABE_BOTTOM, bottomPx, force);
+        if (leftPx > 0 || _sides[0] != null) SetBar(Side(0), ABE_LEFT, leftPx, force);
+        if (rightPx > 0 || _sides[1] != null) SetBar(Side(1), ABE_RIGHT, rightPx, force);
+    }
+
+    // the left and right edges' app bars: windows of their own, never shown (an app bar needs only a handle)
+    static readonly System.Windows.Interop.HwndSource[] _sides = new System.Windows.Interop.HwndSource[2];
+
+    static IntPtr Side(int i)
+    {
+        if (_sides[i] == null)
+        {
+            var p = new System.Windows.Interop.HwndSourceParameters(i == 0 ? "MacShell Left Edge" : "MacShell Right Edge")
+            {
+                WindowStyle = unchecked((int)0x80000000),   // WS_POPUP, not WS_VISIBLE
+                ExtendedWindowStyle = (int)(WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE),
+                Width = 1, Height = 1, PositionX = -32000, PositionY = -32000,
+            };
+            var src = new System.Windows.Interop.HwndSource(p);
+            src.AddHook((IntPtr h, int msg, IntPtr w, IntPtr l, ref bool handled) =>
+            {
+                if (HandleAppBarMessage(h, msg, w, l)) handled = true;
+                return IntPtr.Zero;
+            });
+            _sides[i] = src;
+        }
+        return _sides[i].Handle;
     }
 
     static void SetBar(IntPtr hwnd, uint edge, int px, bool force = false)
@@ -301,9 +328,22 @@ public static class Takeover
         var abd = NewData(hwnd);
         abd.uEdge = bar.Edge;
         abd.rc = mon;
-        if (bar.Edge == ABE_TOP) abd.rc.Bottom = mon.Top + bar.Thickness; else abd.rc.Top = mon.Bottom - bar.Thickness;
+        int t = bar.Thickness;
+        switch (bar.Edge)
+        {
+            case ABE_TOP: abd.rc.Bottom = mon.Top + t; break;
+            case ABE_BOTTOM: abd.rc.Top = mon.Bottom - t; break;
+            case ABE_LEFT: abd.rc.Right = mon.Left + t; break;
+            default: abd.rc.Left = mon.Right - t; break;
+        }
         AppBarMsg(ABM_QUERYPOS, ref abd);
-        if (bar.Edge == ABE_TOP) abd.rc.Bottom = abd.rc.Top + bar.Thickness; else abd.rc.Top = abd.rc.Bottom - bar.Thickness;
+        switch (bar.Edge)
+        {
+            case ABE_TOP: abd.rc.Bottom = abd.rc.Top + t; break;
+            case ABE_BOTTOM: abd.rc.Top = abd.rc.Bottom - t; break;
+            case ABE_LEFT: abd.rc.Right = abd.rc.Left + t; break;
+            default: abd.rc.Left = abd.rc.Right - t; break;
+        }
         // ABN_POSCHANGED is broadcast to every app bar after any SETPOS; skip no-op updates to avoid ping-pong.
         if (!force && abd.rc.Left == bar.Last.Left && abd.rc.Top == bar.Last.Top && abd.rc.Right == bar.Last.Right && abd.rc.Bottom == bar.Last.Bottom) return;
         AppBarMsg(ABM_SETPOS, ref abd);
@@ -328,10 +368,10 @@ public static class Takeover
     }
 
     /// <summary>No Explorer (MacShell running as the real shell): set the work area directly, once.</summary>
-    static void FallbackWorkArea(int topPx, int bottomPx)
+    static void FallbackWorkArea(int topPx, int bottomPx, int leftPx, int rightPx)
     {
         var mon = GetMonitorInfo(PrimaryMonitor()).rcMonitor;
-        var want = new RECT(mon.Left, mon.Top + topPx, mon.Right, mon.Bottom - bottomPx);
+        var want = new RECT(mon.Left + leftPx, mon.Top + topPx, mon.Right - rightPx, mon.Bottom - bottomPx);
         RECT cur = default;
         SystemParametersInfo(SPI_GETWORKAREA, 0, ref cur, 0);
         if (!_fallbackUsed) { _fallbackSavedWorkArea = cur; _fallbackUsed = true; }

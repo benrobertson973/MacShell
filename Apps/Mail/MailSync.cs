@@ -122,8 +122,9 @@ public sealed class MailSync
 
     /// <summary>
     /// Push: a second connection rests in the Inbox (IMAP IDLE) - the server tells it at once when mail arrives, is
-    /// deleted or changes - and wakes the sync to fetch it. The IDLE is renewed every 9 minutes (servers drop quiet
-    /// connections); a lost connection is made again, sooner after a kick. A server without IDLE is asked every 30 s.
+    /// deleted or changes - and wakes the sync to fetch it. The IDLE is renewed every 4 minutes (servers and routers
+    /// drop quiet connections); a lost connection is made again, sooner after a kick. A server without IDLE is asked
+    /// every 30 s.
     /// </summary>
     async Task PushLoopAsync(CancellationToken ct)
     {
@@ -136,19 +137,20 @@ public sealed class MailSync
             {
                 c = await ConnectAsync(Account, ct);
                 var inbox = c.Inbox;
-                inbox.CountChanged += (_, _) => Wake(inboxOnly: true);
+                inbox.CountChanged += (_, _) => { MailLog.Write($"push {Account.Provider}: the Inbox changed (now {inbox.Count})"); Wake(inboxOnly: true); };
                 inbox.MessageExpunged += (_, _) => Wake(inboxOnly: true);
                 inbox.MessageFlagsChanged += (_, _) => Wake(inboxOnly: true);
                 await inbox.OpenAsync(FolderAccess.ReadOnly, ct);
                 bool idle = c.Capabilities.HasFlag(ImapCapabilities.Idle);
                 Pushing = idle;
                 backoff = 5;
+                MailLog.Write($"push {Account.Provider}: watching the Inbox ({(idle ? "IDLE" : "asking every 30 s")})");
                 while (!ct.IsCancellationRequested && !kick.IsCancellationRequested && c.IsConnected)
                 {
                     if (idle)
                     {
                         using var done = CancellationTokenSource.CreateLinkedTokenSource(kick.Token);
-                        done.CancelAfter(TimeSpan.FromMinutes(9));
+                        done.CancelAfter(TimeSpan.FromMinutes(4));
                         await c.IdleAsync(done.Token, ct);
                     }
                     else
@@ -160,7 +162,7 @@ public sealed class MailSync
                 }
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested) { break; }
-            catch { }
+            catch (Exception ex) { MailLog.Write($"push {Account.Provider}: lost ({ex.GetType().Name}: {ex.Message})"); }
             finally
             {
                 Pushing = false;
@@ -186,10 +188,15 @@ public sealed class MailSync
                 _foldersAt = DateTime.UtcNow;
             }
             var inbox = FolderByRole("inbox");
-            var before = inbox != null ? Messages(inbox.FullName).Select(m => m.Uid).ToHashSet() : new HashSet<uint>();
+            uint top = inbox != null && Messages(inbox.FullName) is { Count: > 0 } had ? had.Max(m => m.Uid) : 0;
+            var started = DateTime.UtcNow;
             var targets = Folders.Where(f => inboxOnly ? f.Role == "inbox" : f.Role is "inbox" or "drafts" or "sent").Select(f => f.FullName).ToList();
             if (!inboxOnly && Watching != null && Folder(Watching) != null && !targets.Contains(Watching)) targets.Add(Watching);
-            foreach (var t in targets) await SyncFolderLockedAsync(c, t, false, ct);
+            foreach (var t in targets)
+            {
+                await SyncFolderLockedAsync(c, t, false, ct);
+                if (t == inbox?.FullName) Arrived(inbox, top, started);
+            }
             // the other mailboxes: how many unread
             if (!inboxOnly)
                 foreach (var f in Folders.Where(f => !targets.Contains(f.FullName)))
@@ -204,13 +211,6 @@ public sealed class MailSync
                     catch (ImapCommandException) { }
                 }
             MailStore.SaveFolders(Account.Id, Folders);
-            if (inbox != null && _synced)
-            {
-                // (new: after the newest there was - not an old unread one fetched out of turn)
-                uint top = before.Count > 0 ? before.Max() : 0;
-                var fresh = Messages(inbox.FullName).Where(m => m.Uid > top && !m.Seen).ToList();
-                if (fresh.Count > 0) Application.Current?.Dispatcher.BeginInvoke(() => NewMail?.Invoke(fresh));
-            }
             _synced = true;
             Error = null;
         }
@@ -221,6 +221,28 @@ public sealed class MailSync
             Busy = false;
             _gate.Release();
             Raise();
+        }
+    }
+
+    /// <summary>What came into the Inbox (after the newest there was - not an old unread one fetched out of turn): announced
+    /// at once, not after the other mailboxes are looked at; and downloaded whole meanwhile, so it opens at once.</summary>
+    void Arrived(MailFolderInfo inbox, uint top, DateTime started)
+    {
+        var fresh = Messages(inbox.FullName).Where(m => m.Uid > top).ToList();
+        if (fresh.Count == 0) return;
+        MailLog.Write($"sync {Account.Provider}: {fresh.Count} new in the Inbox, {(DateTime.UtcNow - started).TotalSeconds:0.0}s after the check began");
+        _ = PrefetchAsync(fresh);
+        var unread = fresh.Where(m => !m.Seen).ToList();
+        if (_synced && unread.Count > 0) Application.Current?.Dispatcher.BeginInvoke(() => NewMail?.Invoke(unread));
+    }
+
+    /// <summary>New mail downloaded whole in the background (the newest 20; not huge ones), as Mail on a Mac does.</summary>
+    async Task PrefetchAsync(List<MailMessageInfo> msgs)
+    {
+        foreach (var m in msgs.OrderByDescending(m => m.Uid).Take(20))
+        {
+            if (m.Size > 15_000_000 || File.Exists(MailStore.MessageFile(m))) continue;
+            try { await GetMessageAsync(m); } catch { }
         }
     }
 
@@ -250,11 +272,32 @@ public sealed class MailSync
         return _imap;
     }
 
-    static async Task<ImapClient> ConnectAsync(MailAccount a, CancellationToken ct)
+    static async Task<ImapClient> ConnectAsync(MailAccount a, CancellationToken ct, int timeout = 60_000)
     {
-        var c = new ImapClient { Timeout = 60_000 };
+        var c = new ImapClient { Timeout = timeout };
         var (host, port, tls) = a.Imap;
-        await c.ConnectAsync(host, port, tls, ct);
+        // TCP keep-alive: a quiet connection (push rests for minutes) stays open through routers that forget quiet
+        // ones, and one that died anyway is noticed in a minute and a half instead of hanging until it's next used
+        var socket = new Socket(SocketType.Stream, ProtocolType.Tcp);
+        try
+        {
+            try
+            {
+                socket.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.KeepAlive, true);
+                socket.SetSocketOption(SocketOptionLevel.Tcp, SocketOptionName.TcpKeepAliveTime, 60);
+                socket.SetSocketOption(SocketOptionLevel.Tcp, SocketOptionName.TcpKeepAliveInterval, 10);
+                socket.SetSocketOption(SocketOptionLevel.Tcp, SocketOptionName.TcpKeepAliveRetryCount, 3);
+            }
+            catch (SocketException) { }   // (an older Windows without these: the connection works all the same)
+            await socket.ConnectAsync(host, port, ct);
+            await c.ConnectAsync(socket, host, port, tls, ct);
+        }
+        catch
+        {
+            socket.Dispose();
+            c.Dispose();
+            throw;
+        }
         try { await c.AuthenticateAsync(a.Email, a.Password, ct); }
         catch (AuthenticationException) when (a.Provider == MailProvider.ICloud && a.Email.Contains('@'))
         {
@@ -472,7 +515,7 @@ public sealed class MailSync
         info.HasOlder = all.Count > 0 && WindowStart(all, merged.Select(m => m.Uid).ToHashSet()) > all[0].Id;
         SetMessages(fullName, merged);
         if (took.Elapsed.TotalSeconds > 5)
-            global::MacShell.App.Log($"mail: {Account.Provider} \"{info.Name}\" took {took.Elapsed.TotalSeconds:0.0}s ({fetched.Count} fetched, {merged.Count} kept)");
+            MailLog.Write($"sync {Account.Provider}: \"{info.Name}\" took {took.Elapsed.TotalSeconds:0.0}s ({fetched.Count} fetched, {merged.Count} kept)");
     }
 
     /// <summary>The oldest of the newest messages kept with no gap (<paramref name="all"/>: the server's, oldest first) -
@@ -526,6 +569,7 @@ public sealed class MailSync
     // opening a message has a connection of its own: it never waits behind a sync (a big mailbox's first one takes a while)
     readonly SemaphoreSlim _openGate = new(1, 1);
     ImapClient _openImap;
+    DateTime _openUsed;
 
     /// <summary>The whole message: kept on disk after the first time.</summary>
     public async Task<MimeMessage> GetMessageAsync(MailMessageInfo m)
@@ -535,32 +579,41 @@ public sealed class MailSync
             try { return await MimeMessage.LoadAsync(file); } catch { }
         MimeMessage msg = null;
         var ct = _stop?.Token ?? CancellationToken.None;
+        var took = System.Diagnostics.Stopwatch.StartNew();
+        string how = "";
         try { await _openGate.WaitAsync(ct); } catch (OperationCanceledException) { return null; }
         try
         {
-            // (twice at most: a connection left idle is often dropped by the server, and then a new one is made)
+            // (twice at most: a connection can be dropped by the server or the network, and then a new one is made)
             for (int attempt = 0; attempt < 2 && msg == null && !ct.IsCancellationRequested; attempt++)
             {
                 try
                 {
-                    if (_openImap is not { IsConnected: true, IsAuthenticated: true })
+                    // a connection left quiet a while is made anew, not trusted: it may be dead without knowing it
+                    if (_openImap is not { IsConnected: true, IsAuthenticated: true } || DateTime.UtcNow - _openUsed > TimeSpan.FromMinutes(2))
                     {
                         try { _openImap?.Dispose(); } catch { }
-                        _openImap = await ConnectAsync(Account, ct);
+                        _openImap = null;
+                        _openImap = await ConnectAsync(Account, ct, timeout: 20_000);
+                        how += " new connection";
                     }
                     var f = await OpenAsync(_openImap, m.Folder, FolderAccess.ReadOnly, ct);
                     msg = await f.GetMessageAsync(new UniqueId(m.Uid), ct);
+                    _openUsed = DateTime.UtcNow;
                 }
                 catch (OperationCanceledException) { break; }
-                catch (MessageNotFoundException) { break; }
-                catch
+                catch (Exception ex)
                 {
+                    // (not found on a connection that opened the mailbox before it came: once more, on a new one)
+                    how += $" {ex.GetType().Name}";
                     try { _openImap?.Dispose(); } catch { }
                     _openImap = null;
+                    if (ex is MessageNotFoundException && attempt == 1) break;
                 }
             }
         }
         finally { _openGate.Release(); }
+        MailLog.Write($"open {Account.Provider}: {(msg != null ? "downloaded" : "FAILED")} in {took.Elapsed.TotalSeconds:0.0}s{how}");
         if (msg != null)
         {
             try

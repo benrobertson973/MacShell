@@ -231,6 +231,7 @@ public class SettingsWindow : MacWindow
             case "wallpaper": BuildWallpaper(); break;
             case "dock": BuildDock(); break;
             case "controlcenter": BuildControlCenter(); break;
+            case "displays": BuildDisplays(); break;
             case "spotlight": BuildSpotlight(); break;
             case "sound": BuildSound(); break;
             case "general": BuildGeneral(); break;
@@ -583,6 +584,59 @@ public class SettingsWindow : MacWindow
             left.Children.Insert(0, line);
         }
         return row;
+    }
+
+    /// <summary>The pane shown again if it's this one (what it shows was changed elsewhere).</summary>
+    public static void Refresh(string id)
+    {
+        if (Instance is { } w && w._pane == id) w.Open(id, false);
+    }
+
+    void BuildDisplays()
+    {
+        var t = Settings.Current.ScreenTrim is { Length: 4 } st ? st : new int[4];
+        SectionTitle("Screen Edges");
+        var setUp = new Button { Content = "Set Up…", Style = (Style)Application.Current.Resources["MacButton"] };
+        setUp.Click += (_, _) => Shell.ScreenEdgesWindow.Open(firstRun: false);
+        Group(
+            Row("Cut off the edges of the screen", setUp,
+                "For a screen whose edges you can’t fully see - a TV, or a covered or broken edge. The menu bar, the Dock and your windows stay inside what’s left."),
+            Row("Left", TrimField(0, t[0])),
+            Row("Top", TrimField(1, t[1])),
+            Row("Right", TrimField(2, t[2])),
+            Row("Bottom", TrimField(3, t[3])));
+        SectionTitle("Display");
+        Group(Row("Resolution, scale, Night Light and more displays", MakeLink("Open Windows Display Settings…", "ms-settings:display")));
+    }
+
+    /// <summary>How much of one edge is cut off (pixels): typed, and used when Return is pressed or the field is left.</summary>
+    static FrameworkElement TrimField(int side, int value)
+    {
+        var box = new TextBox { Style = (Style)Application.Current.Resources["MacTextField"], Text = value.ToString(), Width = 64, Height = 24, TextAlignment = TextAlignment.Right };
+        void Commit()
+        {
+            int.TryParse(box.Text.Trim(), out int v);
+            v = Math.Max(0, v);
+            var cur = Settings.Current.ScreenTrim is { Length: 4 } c ? (int[])c.Clone() : new int[4];
+            if (cur[side] != v)
+            {
+                cur[side] = v;
+                Settings.Current.ScreenTrim = cur.Any(n => n > 0) ? cur : null;
+                Settings.Save(notify: false);
+                ShellHost.ApplyScreenTrim();
+            }
+            var used = ShellHost.TrimPx;   // (what applies: no more than leaves most of the screen)
+            box.Text = (side switch { 0 => used.Left, 1 => used.Top, 2 => used.Right, _ => used.Bottom }).ToString();
+        }
+        box.KeyDown += (_, e) => { if (e.Key == Key.Enter) Commit(); };
+        box.LostKeyboardFocus += (_, _) => Commit();
+        var sp = new StackPanel { Orientation = Orientation.Horizontal };
+        sp.Children.Add(box);
+        var px = Txt("px", 13, brush: "SecondaryLabelBrush");
+        px.VerticalAlignment = VerticalAlignment.Center;
+        px.Margin = new Thickness(6, 0, 0, 0);
+        sp.Children.Add(px);
+        return sp;
     }
 
     void BuildSpotlight()

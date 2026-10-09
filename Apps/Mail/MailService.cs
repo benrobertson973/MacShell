@@ -112,6 +112,7 @@ public static class MailService
 
     static void Announce(List<MailMessageInfo> fresh)
     {
+        MailLog.Write($"announced {fresh.Count} new{(Settings.Current.MailNotify ? "" : " (notifications are off)")}");
         if (!Settings.Current.MailNotify) return;
         try
         {

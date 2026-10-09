@@ -98,6 +98,11 @@ public class AppSettings
     public double[] MailWindowBounds { get; set; }
     public bool MailWindowZoomed { get; set; }
     public double[] MailComposeSize { get; set; }
+    /// <summary>Screen edges cut off (pixels: left, top, right, bottom) of the main display - for a screen whose edges
+    /// can't be seen (a TV, a bezel, a damaged strip): the menu bar, the Dock, the desktop and maximized windows fit
+    /// inside what's left. Null: none. And whether the first-run screen for it has been shown.</summary>
+    public int[] ScreenTrim { get; set; }
+    public bool ScreenTrimAsked { get; set; }
     /// <summary>Where eating mode's little window was dragged to (DIPs); null: the top right.</summary>
     public double? EatingHudLeft { get; set; }
     public double? EatingHudTop { get; set; }
@@ -115,13 +120,16 @@ public static class Settings
     public static AppSettings Current { get; private set; } = new();
     public static string DataDirectory => Dir;
     public static event Action Changed;
+    /// <summary>MacShell's very first start here (no settings yet): the first-run screens are shown.</summary>
+    public static bool IsFirstRun { get; private set; }
 
     public static void Load()
     {
         try
         {
             Directory.CreateDirectory(Dir);
-            if (File.Exists(FilePath))
+            IsFirstRun = !File.Exists(FilePath);
+            if (!IsFirstRun)
                 Current = JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(FilePath), Opts) ?? new AppSettings();
         }
         catch { Current = new AppSettings(); }
