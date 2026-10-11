@@ -103,6 +103,18 @@ public class AppSettings
     /// inside what's left. Null: none. And whether the first-run screen for it has been shown.</summary>
     public int[] ScreenTrim { get; set; }
     public bool ScreenTrimAsked { get; set; }
+    /// <summary>Open and Save panels like a Mac's in place of the Windows file dialog, in every app; how they show the
+    /// files; where each app last opened or saved (app → folder); and the folders used lately.</summary>
+    public bool MacFilePanels { get; set; } = true;
+    public string FilePanelView { get; set; } = "list";
+    public Dictionary<string, string> FilePanelPlaces { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+    public List<string> FilePanelRecentFolders { get; set; } = new();
+    /// <summary>The panels' size as last left (an Open panel, or Save opened out); the apps whose Save panel opens out
+    /// (with the folders), as each was left; whether an Open panel shows the app's options (null: when it has kinds of
+    /// file to choose between).</summary>
+    public double[] FilePanelSize { get; set; }
+    public List<string> FilePanelExpanded { get; set; } = new();
+    public bool? FilePanelShowOptions { get; set; }
     /// <summary>Where eating mode's little window was dragged to (DIPs); null: the top right.</summary>
     public double? EatingHudLeft { get; set; }
     public double? EatingHudTop { get; set; }
@@ -137,6 +149,9 @@ public static class Settings
         Current.Tags = new(Current.Tags ?? new(), StringComparer.OrdinalIgnoreCase);
         Current.DesktopPositions = new(Current.DesktopPositions ?? new(), StringComparer.OrdinalIgnoreCase);
         Current.MenuBarHidden = new(Current.MenuBarHidden ?? new(), StringComparer.OrdinalIgnoreCase);
+        Current.FilePanelPlaces = new(Current.FilePanelPlaces ?? new(), StringComparer.OrdinalIgnoreCase);
+        Current.FilePanelRecentFolders ??= new();
+        Current.FilePanelExpanded ??= new();
         Current.RecentApps ??= new();
         Current.RecentDocs ??= new();
     }

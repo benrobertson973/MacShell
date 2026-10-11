@@ -85,6 +85,10 @@
             <DataTrigger Binding="{Binding IsDropTarget}" Value="True">
                 <Setter TargetName="iconBox" Property="Background" Value="{DynamicResource PressedBrush}"/>
             </DataTrigger>
+            <DataTrigger Binding="{Binding IsDisabled}" Value="True">
+                <Setter TargetName="iconBox" Property="Opacity" Value="0.4"/>
+                <Setter TargetName="labelBox" Property="Opacity" Value="0.4"/>
+            </DataTrigger>
         </DataTemplate.Triggers>
     </DataTemplate>
 
@@ -161,6 +165,9 @@
             <DataTrigger Binding="{Binding IsDropTarget}" Value="True">
                 <Setter TargetName="sel" Property="Background" Value="{DynamicResource AccentSoftBrush}"/>
             </DataTrigger>
+            <DataTrigger Binding="{Binding IsDisabled}" Value="True">
+                <Setter TargetName="sel" Property="Opacity" Value="0.4"/>
+            </DataTrigger>
         </DataTemplate.Triggers>
     </DataTemplate>
 
@@ -207,6 +214,9 @@
             </DataTrigger>
             <DataTrigger Binding="{Binding IsDropTarget}" Value="True">
                 <Setter TargetName="sel" Property="Background" Value="{DynamicResource AccentSoftBrush}"/>
+            </DataTrigger>
+            <DataTrigger Binding="{Binding IsDisabled}" Value="True">
+                <Setter TargetName="sel" Property="Opacity" Value="0.4"/>
             </DataTrigger>
         </DataTemplate.Triggers>
     </DataTemplate>

@@ -48,6 +48,16 @@ public class MacWindow : Window
         SourceInitialized += OnSourceInitialized;
         Theme.Changed += ApplyDwmTheme;
         Closed += (_, _) => Theme.Changed -= ApplyDwmTheme;
+        // (diagnostics: a window slow to appear is noted in MacShell's log - when, in its showing, the time went)
+        var born = System.Diagnostics.Stopwatch.StartNew();
+        long source = 0, sourceDone = 0;
+        SourceInitialized += (_, _) => source = born.ElapsedMilliseconds;
+        Loaded += (_, _) => sourceDone = born.ElapsedMilliseconds;
+        ContentRendered += (_, _) =>
+        {
+            if (born.ElapsedMilliseconds > 700)
+                App.Log($"window {AppKey} \"{Title}\": first drawn {born.ElapsedMilliseconds} ms after it was made (handle at {source} ms, loaded at {sourceDone} ms)");
+        };
     }
 
     void OnSourceInitialized(object sender, EventArgs e)

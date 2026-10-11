@@ -51,6 +51,9 @@ public class FileItem : INotifyPropertyChanged
     bool _cut;
     public bool IsDropTarget { get => _drop; set { _drop = value; OnChanged(); } }
     bool _drop;
+    /// <summary>Greyed out: an Open panel's files of another type (they can't be chosen).</summary>
+    public bool IsDisabled { get => _disabled; set { if (_disabled != value) { _disabled = value; OnChanged(); } } }
+    bool _disabled;
     /// <summary>Rounded corners for contiguous selection blocks in list views.</summary>
     public System.Windows.CornerRadius SelCorner { get => _corner; set { if (_corner != value) { _corner = value; OnChanged(); } } }
     System.Windows.CornerRadius _corner = new(5);

@@ -426,8 +426,13 @@ public class SettingsWindow : MacWindow
         var add = new Button { Content = "Add Photo…", Style = (Style)Application.Current.Resources["MacButton"], HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(0, 10, 0, 0) };
         add.Click += (_, _) =>
         {
-            var dlg = new Microsoft.Win32.OpenFileDialog { Filter = "Images|*.jpg;*.jpeg;*.png;*.bmp;*.gif;*.tif;*.tiff;*.webp;*.jfif;*.heic|All files|*.*" };
-            if (dlg.ShowDialog(this) == true) SetWallpaper(dlg.FileName);
+            var r = Finder.FilePanel.ShowModal(this, new Finder.FilePanelRequest
+            {
+                Title = "Choose a picture for your desktop", Prompt = "Choose", AppKey = "macshell:wallpaper",
+                Folder = Settings.Current.FilePanelPlaces.ContainsKey("macshell:wallpaper") ? null : Environment.GetFolderPath(Environment.SpecialFolder.MyPictures),
+                Filters = { "Images (*.jpg;*.jpeg;*.png;*.bmp;*.gif;*.tif;*.tiff;*.webp;*.jfif;*.heic)", "All files (*.*)" },
+            });
+            if (r?.Paths.Count > 0) SetWallpaper(r.Paths[0]);
         };
         info.Children.Add(add);
         Grid.SetColumn(info, 1);
@@ -746,6 +751,9 @@ public class SettingsWindow : MacWindow
         Group(
             Row("New Finder windows show", PopUp(targetNames, Math.Max(0, Array.IndexOf(targets, s.FinderNewWindowTarget)), i => { Settings.Current.FinderNewWindowTarget = targets[i]; Save(); })),
             Row("Default view", PopUp(viewNames, Math.Max(0, Array.IndexOf(views, s.FinderDefaultView)), i => { Settings.Current.FinderDefaultView = views[i]; Save(); })));
+        SectionTitle("Open and Save");
+        Group(Row("Use Mac-style Open and Save windows in all apps", Switch(s.MacFilePanels, v => { Settings.Current.MacFilePanels = v; Save(); }),
+            "In place of the Windows file window. When an app needs its own, right-click the files and choose Show Windows Dialog"));
         SectionTitle("Advanced");
         Group(
             Row("Show all filename extensions", Switch(s.FinderShowExtensions, v => { Settings.Current.FinderShowExtensions = v; Save(); foreach (var w in Finder.FinderWindow.All) w.Reload(true); })),

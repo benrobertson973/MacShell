@@ -36,8 +36,18 @@ public sealed class MailWindow : MacWindow
             f.Activate();
             return;
         }
+        var took = System.Diagnostics.Stopwatch.StartNew();
         var w = new MailWindow();
+        long built = took.ElapsedMilliseconds, shown = 0, loaded = 0, firstLayout = 0, viewerLoaded = 0;
+        w.Loaded += (_, _) => loaded = took.ElapsedMilliseconds;
+        w._viewer.Loaded += (_, _) => viewerLoaded = took.ElapsedMilliseconds;
+        EventHandler onLayout = null;
+        onLayout = (_, _) => { firstLayout = took.ElapsedMilliseconds; w.LayoutUpdated -= onLayout; };
+        w.LayoutUpdated += onLayout;
+        w.ContentRendered += (_, _) => MailLog.Write($"ui: window built in {built} ms; Show() returned at {shown} ms, first layout {firstLayout}, " +
+                                                      $"loaded {loaded}, viewer loaded {viewerLoaded}, first drawn {took.ElapsedMilliseconds} ms after opening");
         w.Show();
+        shown = took.ElapsedMilliseconds;
         if (!ShellHost.Offscreen) w.Activate();
     }
 
@@ -243,7 +253,7 @@ public sealed class MailWindow : MacWindow
     public static string TestState() => Front is not { } w ? "no window" :
         $"box={w._box?.Title} role={w._box?.Role} items={w._items.Count} selected={w._list.SelectedItems.Count} " +
         $"unreadOnly={w._unreadOnly.IsChecked == true} search={w._search.Text.Length} subtitle=\"{w._subtitle.Text}\" empty={w._empty.Visibility} " +
-        $"viewerLoaded={w._viewer.Message != null}";
+        $"viewerLoaded={w._viewer.Message != null} rowsMade={Enumerable.Range(0, w._items.Count).Count(i => w._list.ItemContainerGenerator.ContainerFromIndex(i) != null)}";
 
     /// <summary>Where and how big Mail's window was last time (if that's still on a screen), and zoomed if it was.</summary>
     void PlaceAsBefore()
@@ -422,6 +432,10 @@ public sealed class MailWindow : MacWindow
         _list.Background = Brushes.Transparent;
         _list.Focusable = true;
         _list.SetValue(ScrollViewer.HorizontalScrollBarVisibilityProperty, ScrollBarVisibility.Disabled);
+        // only the rows on screen are made (the app's ListBox style leaves CanContentScroll off - and with it off, a
+        // list makes every row: hundreds of messages took seconds to open, and every refresh redid them all);
+        // scrolling stays smooth, by pixel
+        _list.SetValue(ScrollViewer.CanContentScrollProperty, true);
         _list.SetValue(VirtualizingPanel.IsVirtualizingProperty, true);
         _list.SetValue(VirtualizingPanel.VirtualizationModeProperty, VirtualizationMode.Recycling);
         _list.SetValue(VirtualizingPanel.ScrollUnitProperty, ScrollUnit.Pixel);
@@ -477,8 +491,11 @@ public sealed class MailWindow : MacWindow
 
     void OnMailChanged()
     {
+        var took = System.Diagnostics.Stopwatch.StartNew();
         BuildSidebar();
+        long side = took.ElapsedMilliseconds;
         RefreshList(keepSelection: true);
+        if (took.ElapsedMilliseconds > 30) MailLog.Write($"ui: refreshed in {took.ElapsedMilliseconds} ms (sidebar {side} ms, list of {_items.Count})");
     }
 
     /// <summary>What Show Only Unread has shown: they stay while it's on, read or not - as on a Mac, reading one doesn't

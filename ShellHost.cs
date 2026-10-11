@@ -52,6 +52,7 @@ public static class ShellHost
         _ = AppCatalog.LoadAsync();
 
         if (TakeoverEnabled) Takeover.Engage(Settings.Current.HideWindowsTaskbar);
+        FileDialogTakeover.RestoreLeftovers();   // (dialogs hidden when MacShell stopped unexpectedly: shown again)
 
         foreach (var mon in GetMonitors())
         {
@@ -384,6 +385,30 @@ public static class ShellHost
                     ApplyScreenTrim();
                     File.WriteAllText(Path.Combine(Settings.DataDirectory, "screentrim.txt"),
                         $"monitor={MonitorPx.Left},{MonitorPx.Top} {MonitorPx.Width}x{MonitorPx.Height} visible={ScreenPx.Left},{ScreenPx.Top} {ScreenPx.Width}x{ScreenPx.Height} trim={TrimPx}");
+                    break;
+                }
+            case "filepanel":   // diagnostics: filepanel:open | save | folder | multi[:<the app's words>] - a panel to look at (as another app's); filepanel:pick:<path>|<path>; filepanel:cancel; filepanel:test:<what>; filepanel:state → filepanel.txt
+                {
+                    string verb = (arg ?? "").Split(':')[0];
+                    string rest = arg != null && arg.Length > verb.Length ? arg[(verb.Length + 1)..] : "";
+                    switch (verb)
+                    {
+                        case "open" or "save" or "folder" or "multi":
+                            Finder.FilePanel.Show(new Finder.FilePanelRequest
+                            {
+                                Save = verb == "save", Folders = verb == "folder", Multiple = verb == "multi", FileName = "Untitled.txt", AppName = "Test", AppKey = "test.exe",
+                                Title = rest.Length > 0 ? rest : null, OfferWindowsDialog = true,
+                                Filters = verb == "folder" ? new() : new() { "Text files (*.txt)", "Images (*.png;*.jpg)", "All files (*.*)" },
+                            }, r => File.WriteAllText(Path.Combine(Settings.DataDirectory, "filepanel-answer.txt"), r == null ? "cancelled" : string.Join("|", r.Paths) + $" filter={r.FilterIndex}"));
+                            break;
+                        case "pick": Finder.FilePanel.Current?.TestPick(rest.Split('|', StringSplitOptions.RemoveEmptyEntries)); break;
+                        case "cancel": Finder.FilePanel.Current?.TestCancel(); break;
+                        case "test": Finder.FilePanel.Current?.Test(rest); break;
+                        case "state":
+                            File.WriteAllText(Path.Combine(Settings.DataDirectory, "filepanel.txt"),
+                                (Finder.FilePanel.Current?.TestState() ?? "no panel") + "\ntaken over: " + FileDialogTakeover.Describe());
+                            break;
+                    }
                     break;
                 }
             case "mailstate":   // diagnostics: what Mail's front window shows (counts only) → mailstate.txt
@@ -814,6 +839,7 @@ public static class ShellHost
         try { Settings.SaveNow(); } catch { }
         try { Apps.Preview.PreviewWindow.AutoSaveAll(); } catch { }
         try { WindowGuard.Release(); } catch { }
+        try { FileDialogTakeover.RestoreAll(); } catch { }
         try { _hook?.Dispose(); } catch { }
         try { WindowTracker.Stop(); } catch { }
         try { TrayHost.Stop(); } catch { }

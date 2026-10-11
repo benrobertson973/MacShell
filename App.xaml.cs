@@ -44,7 +44,14 @@ public partial class App : Application
         {
             if (openCmd != null)
             {
-                try { File.WriteAllText(CommandFile, openCmd); } catch { }
+                // a file of its own for each command (written whole, then named): commands sent close together all run, in order
+                try
+                {
+                    string tmp = Path.Combine(Path.GetDirectoryName(CommandFile), $"command-{DateTime.UtcNow.Ticks:D19}-{Environment.ProcessId}.tmp");
+                    File.WriteAllText(tmp, openCmd);
+                    File.Move(tmp, Path.ChangeExtension(tmp, ".txt"));
+                }
+                catch { }
                 if (EventWaitHandle.TryOpenExisting("MacShell.Command", out var c)) c.Set();
             }
             else if (EventWaitHandle.TryOpenExisting("MacShell.OpenFinder", out var o)) o.Set();
@@ -73,9 +80,12 @@ public partial class App : Application
         _commandEvent = new EventWaitHandle(false, EventResetMode.AutoReset, "MacShell.Command");
         StartSignalWatcher(_commandEvent, () =>
         {
-            string cmd = null;
-            try { cmd = File.ReadAllText(CommandFile).Trim(); File.Delete(CommandFile); } catch { }
-            if (!string.IsNullOrEmpty(cmd)) ShellHost.RunCommand(cmd);
+            foreach (var f in PendingCommands())
+            {
+                string cmd;
+                try { cmd = File.ReadAllText(f).Trim(); File.Delete(f); } catch { continue; }
+                if (!string.IsNullOrEmpty(cmd)) ShellHost.RunCommand(cmd);
+            }
         });
 
         ShellHost.Start(noTakeover: args.Contains("--windowed"));
@@ -84,6 +94,13 @@ public partial class App : Application
 
     EventWaitHandle _commandEvent;
     static string CommandFile => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "MacShell", "command.txt");
+
+    /// <summary>The commands sent (--open) and not yet run, oldest first (command.txt: one from an older MacShell).</summary>
+    static List<string> PendingCommands()
+    {
+        try { return Directory.GetFiles(Path.GetDirectoryName(CommandFile), "command*.txt").OrderBy(f => f, StringComparer.Ordinal).ToList(); }
+        catch { return new List<string>(); }
+    }
 
     void StartSignalWatcher(EventWaitHandle h, Action onSignal)
     {
@@ -116,6 +133,7 @@ public partial class App : Application
 
     protected override void OnExit(ExitEventArgs e)
     {
+        try { Services.FileDialogTakeover.RestoreAll(); } catch { }
         try { Takeover.Release(); } catch { }
         base.OnExit(e);
     }

@@ -58,6 +58,10 @@ Ctrl+Shift+N makes a new folder, Ctrl+Shift+G is Go to Folder, Ctrl+Shift+. show
   tabs, back/forward, path bar, status bar with free space, "This Mac" (Windows Search index) or folder search,
   Quick Look, Get Info, rename in place, marquee selection, drag and drop, copy/cut/paste (Explorer-compatible),
   Duplicate, Compress/Expand, Make Alias, colour tags, Trash with Put Back and Empty, Recents, Applications.
+* **Open and Save panels** in every app (Brave, Notepad, Office …): the Windows file window is replaced by the
+  Mac's — Finder's sidebar and views, files of other kinds greyed out, the small Save sheet (Save As, Tags, Where)
+  that opens out into the folders, Go to Folder, New Folder. Right-click the files → *Show Windows Dialog* when an
+  app's own options are needed; System Settings → Finder turns the panels off.
 * **Desktop**: wallpaper and free-form icons — drag them anywhere (no snapping, positions remembered), drag them
   onto folders, apps or the Dock; *Clean Up* / *Clean Up By* and *Use Stacks* in the desktop's right-click menu.
 * **Windows** never slide under the menu bar (like macOS), and maximised windows fit between the menu bar and Dock.

@@ -391,6 +391,35 @@
         </Setter>
     </Style>
 
+    <!-- a Mac pop-up button: bordered like a push button; its content (a name, and the blue square with the arrows) fills it -->
+    <Style x:Key="MacPopupButton" TargetType="Button" BasedOn="{StaticResource MacButton}">
+        <Setter Property="MinWidth" Value="0"/>
+        <Setter Property="Padding" Value="7,0,3,0"/>
+        <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Grid>
+                        <Border CornerRadius="5.5" Background="{DynamicResource ControlBottomBorderBrush}" Margin="0,0,0,-0.6"/>
+                        <Border x:Name="bd" CornerRadius="5" Background="{TemplateBinding Background}" BorderBrush="{DynamicResource ControlBorderBrush}"
+                                BorderThickness="0.5" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}" VerticalAlignment="Center" RecognizesAccessKey="False"/>
+                        </Border>
+                        <Border x:Name="press" CornerRadius="5" Background="{DynamicResource PressedBrush}" Visibility="Collapsed"/>
+                    </Grid>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsPressed" Value="True">
+                            <Setter TargetName="press" Property="Visibility" Value="Visible"/>
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Opacity" Value="0.45"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
     <Style x:Key="ToolbarButton" TargetType="ButtonBase">
         <Setter Property="OverridesDefaultStyle" Value="True"/>
         <Setter Property="Foreground" Value="{DynamicResource SecondaryLabelBrush}"/>

@@ -126,15 +126,16 @@ public partial class PreviewWindow : MacWindow
 
     public static void OpenFiles()
     {
-        var dlg = new Microsoft.Win32.OpenFileDialog
+        var r = Finder.FilePanel.ShowModal(null, new Finder.FilePanelRequest
         {
-            Title = "Open",
-            Multiselect = true,
-            Filter = "Pictures|" + string.Join(";", PvFile.ImageExtensions.Select(e => "*" + e)) + "|All Files|*.*",
-            InitialDirectory = Environment.GetFolderPath(Environment.SpecialFolder.MyPictures),
-        };
-        if (dlg.ShowDialog() == true)
-            foreach (var f in dlg.FileNames) Open(f);
+            Multiple = true,
+            AppKey = "macshell:preview",
+            // (first time: Pictures; after that, where Preview last opened)
+            Folder = Settings.Current.FilePanelPlaces.ContainsKey("macshell:preview") ? null : Environment.GetFolderPath(Environment.SpecialFolder.MyPictures),
+            Filters = { "Pictures (" + string.Join(";", PvFile.ImageExtensions.Select(e => "*" + e)) + ")", "All Files (*.*)" },
+        });
+        if (r != null)
+            foreach (var f in r.Paths) Open(f);
     }
 
     PreviewWindow() : base(AppId, 0)

@@ -93,11 +93,14 @@ public sealed class MailViewer : DockPanel
     async Task InitAsync()
     {
         if (_ready || _failed) return;
+        var took = System.Diagnostics.Stopwatch.StartNew();
         try
         {
             _env ??= CoreWebView2Environment.CreateAsync(null, Path.Combine(MailStore.Root, "WebView2"));
             var env = await _env;
+            long envMs = took.ElapsedMilliseconds;
             await _web.EnsureCoreWebView2Async(env);
+            MailLog.Write($"ui: message viewer ready in {took.ElapsedMilliseconds} ms (environment {envMs} ms)");
             var core = _web.CoreWebView2;
             var s = core.Settings;
             s.IsScriptEnabled = false;

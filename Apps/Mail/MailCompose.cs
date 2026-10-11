@@ -274,8 +274,8 @@ public sealed class MailComposeWindow : MacWindow
 
     void PickFiles()
     {
-        var dlg = new Microsoft.Win32.OpenFileDialog { Title = "Attach Files", Multiselect = true };
-        if (dlg.ShowDialog(this) == true) foreach (var f in dlg.FileNames) AddFile(f);
+        var r = Finder.FilePanel.ShowModal(this, new Finder.FilePanelRequest { Title = "Attach Files", Prompt = "Attach", Multiple = true, AppKey = "macshell:mail" });
+        if (r != null) foreach (var f in r.Paths) AddFile(f);
     }
 
     void AddFile(string path)
