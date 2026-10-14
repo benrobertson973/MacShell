@@ -1420,10 +1420,10 @@ public partial class FinderWindow : MacWindow, IFinderHost
         {
             var tb = _view.FindRenameBox(item);
             if (tb == null) { item.IsRenaming = false; _renaming = null; return; }
-            tb.Text = item.Name;
+            // (a hidden extension isn't in the box: the rename keeps it)
+            tb.Text = item.DisplayName;
             tb.Focus();
-            int dot = item.IsFolder ? -1 : item.Name.LastIndexOf('.');
-            if (dot > 0) tb.Select(0, dot); else tb.SelectAll();
+            tb.Select(0, item.BaseName.Length);
         }, DispatcherPriority.Loaded);
     }
 
@@ -1441,7 +1441,8 @@ public partial class FinderWindow : MacWindow, IFinderHost
         if (!item.IsRenaming) return;
         item.IsRenaming = false;
         _renaming = null;
-        if (!string.IsNullOrWhiteSpace(newName) && newName != item.Name)
+        newName = item.NameFromRename(newName);
+        if (newName != item.Name)
         {
             string result = FileOps.Rename(item.FullPath, newName);
             if (result != null)

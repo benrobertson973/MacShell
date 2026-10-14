@@ -38,7 +38,10 @@ public class AppSettings
     public bool FinderShowStatusBar { get; set; } = true;
     public bool FinderShowSidebar { get; set; } = true;
     public bool FinderFoldersOnTop { get; set; }
-    public bool FinderShowExtensions { get; set; } = true;
+    public bool FinderShowExtensions { get; set; } = true;       // legacy (superseded by ShowExtensions)
+    /// <summary>Filename extensions shown (the desktop's Show Extensions, Finder settings, Get Info). Off: names are shown
+    /// and renamed without them, and a rename keeps the extension.</summary>
+    public bool ShowExtensions { get; set; }
     public string FinderDefaultView { get; set; } = "icons";
     public double FinderIconSize { get; set; } = 64;
     public string FinderNewWindowTarget { get; set; } = "recents";

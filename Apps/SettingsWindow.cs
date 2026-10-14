@@ -756,7 +756,7 @@ public class SettingsWindow : MacWindow
             "In place of the Windows file window. When an app needs its own, right-click the files and choose Show Windows Dialog"));
         SectionTitle("Advanced");
         Group(
-            Row("Show all filename extensions", Switch(s.FinderShowExtensions, v => { Settings.Current.FinderShowExtensions = v; Save(); foreach (var w in Finder.FinderWindow.All) w.Reload(true); })),
+            Row("Show all filename extensions", Switch(s.ShowExtensions, v => { Settings.Current.ShowExtensions = v; Save(); foreach (var w in Finder.FinderWindow.All) w.Reload(true); })),
             Row("Keep folders on top", Switch(s.FinderFoldersOnTop, v => { Settings.Current.FinderFoldersOnTop = v; Save(); foreach (var w in Finder.FinderWindow.All) w.Reload(true); })),
             Row("Show hidden files", Switch(s.ShowHiddenFiles, v => { Settings.Current.ShowHiddenFiles = v; Save(); foreach (var w in Finder.FinderWindow.All) w.Reload(true); })),
             Row("Show path bar", Switch(s.FinderShowPathBar, v => { Settings.Current.FinderShowPathBar = v; Save(); })),

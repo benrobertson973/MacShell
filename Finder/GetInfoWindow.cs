@@ -171,20 +171,33 @@ public class GetInfoWindow : MacWindow
         if (!it.IsApp && !it.IsTrashItem && !it.IsDrive)
         {
             var nameSec = new StackPanel();
-            var box = new TextBox { Style = (Style)Application.Current.Resources["MacTextField"], Text = it.Name, FontSize = 12 };
+            // (a hidden extension isn't in the box: renaming keeps it)
+            var box = new TextBox { Style = (Style)Application.Current.Resources["MacTextField"], Text = it.DisplayName, FontSize = 12 };
             void Commit()
             {
-                if (box.Text == it.Name) return;
-                string r = FileOps.Rename(it.FullPath, box.Text);
-                if (r != null) { it.FullPath = r; it.Name = Path.GetFileName(r.TrimEnd('\\')); Title = $"{it.DisplayName} Info"; }
-                else box.Text = it.Name;
+                string name = it.NameFromRename(box.Text);
+                if (name != it.Name)
+                {
+                    string r = FileOps.Rename(it.FullPath, name);
+                    if (r != null) { it.FullPath = r; it.Name = Path.GetFileName(r.TrimEnd('\\')); Title = $"{it.DisplayName} Info"; }
+                }
+                box.Text = it.DisplayName;
             }
             box.KeyDown += (_, e) => { if (e.Key == Key.Enter) Commit(); };
             box.LostKeyboardFocus += (_, _) => Commit();
             nameSec.Children.Add(box);
-            var hide = new CheckBox { Content = "Hide extension", Style = (Style)Application.Current.Resources["MacCheckBox"], FontSize = 11, Margin = new Thickness(0, 8, 0, 0), IsChecked = !Settings.Current.FinderShowExtensions };
-            hide.Click += (_, _) => { Settings.Current.FinderShowExtensions = hide.IsChecked != true; Settings.Save(); foreach (var w in FinderWindow.All) w.Reload(true); };
+            var hide = new CheckBox { Content = "Hide extension", Style = (Style)Application.Current.Resources["MacCheckBox"], FontSize = 11, Margin = new Thickness(0, 8, 0, 0), IsChecked = !Settings.Current.ShowExtensions };
+            hide.Click += (_, _) =>
+            {
+                Commit();   // (first what was typed, with the extension shown or hidden as it was)
+                Settings.Current.ShowExtensions = hide.IsChecked != true; Settings.Save(); foreach (var w in FinderWindow.All) w.Reload(true);
+                box.Text = it.DisplayName;
+            };
             nameSec.Children.Add(hide);
+            // the box follows Show Extensions changed elsewhere (the desktop, Settings), so a rename keeps the right extension
+            void FollowSetting() { if (!box.IsKeyboardFocused) box.Text = it.DisplayName; hide.IsChecked = !Settings.Current.ShowExtensions; }
+            Settings.Changed += FollowSetting;
+            Closed += (_, _) => Settings.Changed -= FollowSetting;
             Section("Name & Extension", nameSec, true);
         }
 

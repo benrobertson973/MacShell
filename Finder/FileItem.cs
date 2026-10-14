@@ -30,17 +30,43 @@ public class FileItem : INotifyPropertyChanged
 
     public string Extension => IsFolder || IsApp ? "" : Path.GetExtension(FullPath ?? "") ?? "";
 
-    public string DisplayName
+    /// <summary>The name's extension (".jpg"): none for folders, or when the last dot doesn't start one (".gitignore",
+    /// "Mr. Smith", "Budget v1.2").</summary>
+    string NameExtension
     {
         get
         {
-            if (IsFolder || IsApp || IsDrive) return Name;
+            if (IsFolder || IsApp || IsDrive || string.IsNullOrEmpty(Name)) return "";
             string ext = Path.GetExtension(Name);
-            // aliases never show their extension on a Mac (and Windows hides .lnk too)
-            if (ext.Equals(".lnk", StringComparison.OrdinalIgnoreCase) || ext.Equals(".url", StringComparison.OrdinalIgnoreCase)) return Name[..^ext.Length];
-            if (Settings.Current.FinderShowExtensions) return Name;
-            return string.IsNullOrEmpty(ext) ? Name : Name[..^ext.Length];
+            return ext.Length > 1 && ext.Length < Name.Length && ext.Any(char.IsLetter) && !ext.Any(char.IsWhiteSpace) ? ext : "";
         }
+    }
+
+    /// <summary>The extension left out of the name while extensions aren't shown (an alias's always): a rename keeps it.</summary>
+    public string HiddenExtension
+    {
+        get
+        {
+            string ext = NameExtension;
+            // aliases never show their extension on a Mac (and Windows hides .lnk too)
+            if (ext.Equals(".lnk", StringComparison.OrdinalIgnoreCase) || ext.Equals(".url", StringComparison.OrdinalIgnoreCase)) return ext;
+            return Settings.Current.ShowExtensions ? "" : ext;
+        }
+    }
+
+    public string DisplayName => HiddenExtension is { Length: > 0 } ext ? Name[..^ext.Length] : Name;
+
+    /// <summary>The name without its extension: what a rename selects to begin with.</summary>
+    public string BaseName => NameExtension is { Length: > 0 } ext ? Name[..^ext.Length] : Name;
+
+    /// <summary>The name a rename gives: what was typed, with the hidden extension put back (unless it was typed too).
+    /// Nothing typed: the name it has.</summary>
+    public string NameFromRename(string typed)
+    {
+        typed = typed?.Trim();
+        if (string.IsNullOrEmpty(typed)) return Name;
+        string ext = HiddenExtension;
+        return typed.Length > ext.Length && typed.EndsWith(ext, StringComparison.OrdinalIgnoreCase) ? typed : typed + ext;
     }
 
     public bool IsSelected { get => _sel; set { if (_sel != value) { _sel = value; OnChanged(); } } }

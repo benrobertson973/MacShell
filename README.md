@@ -63,7 +63,8 @@ Ctrl+Shift+N makes a new folder, Ctrl+Shift+G is Go to Folder, Ctrl+Shift+. show
   that opens out into the folders, Go to Folder, New Folder. Right-click the files → *Show Windows Dialog* when an
   app's own options are needed; System Settings → Finder turns the panels off.
 * **Desktop**: wallpaper and free-form icons — drag them anywhere (no snapping, positions remembered), drag them
-  onto folders, apps or the Dock; *Clean Up* / *Clean Up By* and *Use Stacks* in the desktop's right-click menu.
+  onto folders, apps or the Dock; *Clean Up* / *Clean Up By*, *Use Stacks* and *Show Extensions* in the desktop's
+  right-click menu. While extensions are hidden (the default), renaming a file changes only its name: it keeps its extension.
 * **Windows** never slide under the menu bar (like macOS), and maximised windows fit between the menu bar and Dock.
 * **Sound** menu-bar item: volume, output device switching, and Windows' own Volume Mixer / Sound Settings.
 * **Launchpad** (paged grid, search, Other folder) • **Spotlight** (apps, files, calculator, settings, web) •

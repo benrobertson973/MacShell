@@ -146,16 +146,16 @@ public class DesktopWindow : Window
         return $"{s.DesktopIconSize}|{s.DesktopUseStacks}|{s.DockAutoHide}|{s.DockIconSize}";
     }
 
-    bool _lastHidden = Settings.Current.ShowHiddenFiles, _lastExt = Settings.Current.FinderShowExtensions;
+    bool _lastHidden = Settings.Current.ShowHiddenFiles, _lastExt = Settings.Current.ShowExtensions;
 
     /// <summary>Only re-lay out for settings that affect the desktop (settings change often).</summary>
     void OnSettingsChanged()
     {
         if (!IsPrimary || !IsLoaded) return;
         var s = Settings.Current;
-        if (s.ShowHiddenFiles != _lastHidden || s.FinderShowExtensions != _lastExt)
+        if (s.ShowHiddenFiles != _lastHidden || s.ShowExtensions != _lastExt)
         {
-            _lastHidden = s.ShowHiddenFiles; _lastExt = s.FinderShowExtensions;
+            _lastHidden = s.ShowHiddenFiles; _lastExt = s.ShowExtensions;
             LoadItems(true);
             return;
         }
@@ -1011,10 +1011,10 @@ public class DesktopWindow : Window
             Panel.SetZIndex(cp, 400);
             var tb = FindRename(cp);
             if (tb == null) return;
-            tb.Text = it.Name;
+            // (a hidden extension isn't in the box: the rename keeps it)
+            tb.Text = it.DisplayName;
             tb.Focus();
-            int dot = it.IsFolder ? -1 : it.Name.LastIndexOf('.');
-            if (dot > 0) tb.Select(0, dot); else tb.SelectAll();
+            tb.Select(0, it.BaseName.Length);
         }, DispatcherPriority.Loaded);
     }
 
@@ -1038,10 +1038,11 @@ public class DesktopWindow : Window
         string text = _cells.TryGetValue(it, out var cp) ? FindRename(cp)?.Text : null;
         if (cp != null) Panel.SetZIndex(cp, 0);
         it.IsRenaming = false;
-        if (!string.IsNullOrWhiteSpace(text) && text != it.Name)
+        string name = it.NameFromRename(text);
+        if (name != it.Name)
         {
             string old = it.FullPath;
-            string r = FileOps.Rename(old, text);
+            string r = FileOps.Rename(old, name);
             if (r != null)
             {
                 // the icon keeps its spot under its new name
@@ -1119,6 +1120,8 @@ public class DesktopWindow : Window
                 Mb.Item("Small", () => { Settings.Current.DesktopIconSize = 48; Settings.Save(); }, isChecked: Settings.Current.DesktopIconSize == 48),
                 Mb.Item("Medium", () => { Settings.Current.DesktopIconSize = 64; Settings.Save(); }, isChecked: Settings.Current.DesktopIconSize == 64),
                 Mb.Item("Large", () => { Settings.Current.DesktopIconSize = 88; Settings.Save(); }, isChecked: Settings.Current.DesktopIconSize == 88)),
+            Mb.Item("Show Extensions", () => { Settings.Current.ShowExtensions = !Settings.Current.ShowExtensions; Settings.Save(); foreach (var w in FinderWindow.All) w.Reload(true); },
+                isChecked: Settings.Current.ShowExtensions),
             Mb.Sep(),
             Mb.Item("Show in Finder", () => ShellHost.OpenFinder(UserDesktop)));
     }
