@@ -92,6 +92,7 @@ public class LaunchpadWindow : Window
         if (_apps.All(a => a.ParsingName != Apps.Preview.PreviewWindow.AppId)) _apps.Add(new AppEntry { Name = "Preview", ParsingName = Apps.Preview.PreviewWindow.AppId });
         if (_apps.All(a => a.ParsingName != Apps.Mail.MailWindow.AppId)) _apps.Add(new AppEntry { Name = "Mail", ParsingName = Apps.Mail.MailWindow.AppId });
         if (_apps.All(a => a.ParsingName != Apps.Notes.NotesWindow.AppId)) _apps.Add(new AppEntry { Name = "Notes", ParsingName = Apps.Notes.NotesWindow.AppId });
+        if (_apps.All(a => a.ParsingName != Apps.QuickTime.QuickTimeWindow.AppId)) _apps.Add(new AppEntry { Name = "QuickTime Player", ParsingName = Apps.QuickTime.QuickTimeWindow.AppId });
         Loaded += (_, _) => { Layout(); BuildPages(); AnimateIn(); _search.Focus(); };
         Deactivated += (_, _) => CloseAnimated();
         PreviewKeyDown += OnKey;

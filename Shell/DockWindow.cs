@@ -257,6 +257,7 @@ public class DockWindow : Window
         if (target == Apps.Preview.PreviewWindow.AppId) { item.Icon = MacIcons.Preview; item.IconIsVector = true; item.Name = "Preview"; return item; }
         if (target == Apps.Mail.MailWindow.AppId) { item.Icon = MacIcons.Mail; item.IconIsVector = true; item.Name = "Mail"; return item; }
         if (target == Apps.Notes.NotesWindow.AppId) { item.Icon = MacIcons.Notes; item.IconIsVector = true; item.Name = "Notes"; return item; }
+        if (target == Apps.QuickTime.QuickTimeWindow.AppId) { item.Icon = MacIcons.QuickTime; item.IconIsVector = true; item.Name = "QuickTime Player"; return item; }
         item.Icon = MacIcons.GenericApp;
         item.IconIsVector = true;
         EnsureIcon(item, iconSource);
@@ -950,6 +951,9 @@ public class DockWindow : Window
                 case "finder": foreach (var f in files) ShellHost.RevealInFinder(f); break;
                 case "app" when hit.Target == Apps.Preview.PreviewWindow.AppId:
                     foreach (var f in files.Where(Apps.Preview.PvFile.IsImage)) Apps.Preview.PreviewWindow.Open(f);
+                    break;
+                case "app" when hit.Target == Apps.QuickTime.QuickTimeWindow.AppId:
+                    foreach (var f in files.Where(Apps.QuickTime.QuickTimeWindow.IsPlayable)) Apps.QuickTime.QuickTimeWindow.Open(f);
                     break;
                 case "app":
                     AppCatalog.OpenFilesWith(new AppEntryOrTarget(hit.Target, hit.ExePath ?? AppCatalog.FindByParsingName(hit.Target)?.TargetPath ?? hit.Running?.ExePath), files);

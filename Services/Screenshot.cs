@@ -15,13 +15,17 @@ using Path = System.IO.Path;
 
 namespace MacShell.Services;
 
-/// <summary>macOS-style screenshots: full screen (⇧⌘3 → Win+Shift+3) and selection (⇧⌘4 → Win+Shift+4).</summary>
+/// <summary>
+/// macOS-style screenshots: full screen (⇧⌘3 → Win+Shift+3) and selection (⇧⌘4 → Win+Shift+4); the ⇧⌘5 toolbar
+/// (Apps/QuickTime/ScreenRecorder) takes windows and portions too. Its Options apply to all of them: where they go, the
+/// floating thumbnail, the pointer.
+/// </summary>
 public static class Screenshot
 {
     public static void CaptureFullScreen()
     {
         var r = ShellHost.ScreenPx;
-        Save(Capture(r.Left, r.Top, r.Width, r.Height));
+        Deliver(Capture(r.Left, r.Top, r.Width, r.Height, Settings.Current.CaptureShowPointer));
     }
 
     public static void CaptureArea()
@@ -31,13 +35,15 @@ public static class Screenshot
         overlay.Activate();
     }
 
-    static BitmapSource Capture(int x, int y, int w, int h)
+    /// <summary>A part of the screen (screen pixels), with the pointer drawn in if asked (Options › Show Mouse Pointer).</summary>
+    public static BitmapSource Capture(int x, int y, int w, int h, bool pointer = false)
     {
         IntPtr screen = GetDC(IntPtr.Zero);
         IntPtr mem = CreateCompatibleDC(screen);
         IntPtr bmp = CreateCompatibleBitmap(screen, w, h);
         IntPtr old = SelectObject(mem, bmp);
         BitBlt(mem, 0, 0, w, h, screen, x, y, 0x00CC0020 | 0x40000000); // SRCCOPY | CAPTUREBLT
+        if (pointer) DrawPointer(mem, x, y);
         SelectObject(mem, old);
         var src = Imaging.CreateBitmapSourceFromHBitmap(bmp, IntPtr.Zero, Int32Rect.Empty, BitmapSizeOptions.FromEmptyOptions());
         src.Freeze();
@@ -47,13 +53,45 @@ public static class Screenshot
         return src;
     }
 
-    static void Save(BitmapSource img)
+    static void DrawPointer(IntPtr dc, int x, int y)
     {
-        string desktop = Environment.GetFolderPath(Environment.SpecialFolder.Desktop);
-        string name = $"Screenshot {DateTime.Now:yyyy-MM-dd} at {DateTime.Now:h.mm.ss tt}.png";
-        string path = Path.Combine(desktop, name);
+        var ci = new ScreenGdi.CURSORINFO { cbSize = System.Runtime.InteropServices.Marshal.SizeOf<ScreenGdi.CURSORINFO>() };
+        if (!ScreenGdi.GetCursorInfo(ref ci) || (ci.flags & 1) == 0 || ci.hCursor == IntPtr.Zero) return;
+        int hx = 0, hy = 0;
+        if (ScreenGdi.GetIconInfo(ci.hCursor, out var ii))
+        {
+            hx = ii.xHotspot; hy = ii.yHotspot;
+            if (ii.hbmMask != IntPtr.Zero) DeleteObject(ii.hbmMask);
+            if (ii.hbmColor != IntPtr.Zero) DeleteObject(ii.hbmColor);
+        }
+        ScreenGdi.DrawIconEx(dc, ci.ptScreenPos.X - x - hx, ci.ptScreenPos.Y - y - hy, ci.hCursor, 0, 0, 0, IntPtr.Zero, 0x0003);
+    }
+
+    /// <summary>
+    /// A screenshot taken: where Options › Save to says - a file on the Desktop, in Documents or a folder chosen (with the
+    /// floating thumbnail), the clipboard, or Preview.
+    /// </summary>
+    public static void Deliver(BitmapSource img)
+    {
+        string to = Settings.Current.ScreenshotSaveTo ?? "desktop";
+        if (to == "clipboard")
+        {
+            try { Clipboard.SetImage(img); } catch (Exception ex) { ShellHost.ShowAlert("The screenshot couldn’t be copied.", ex.Message); return; }
+            Sound.Play("screenshot");
+            return;
+        }
+        string dir = to switch
+        {
+            "documents" => Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
+            "preview" => Path.Combine(Path.GetTempPath(), "MacShell Screenshots"),
+            "desktop" => Environment.GetFolderPath(Environment.SpecialFolder.Desktop),
+            _ => Directory.Exists(to) ? to : Environment.GetFolderPath(Environment.SpecialFolder.Desktop),
+        };
+        var now = DateTime.Now;
+        string path = Path.Combine(dir, $"Screenshot {now:yyyy-MM-dd} at {now:h.mm.ss tt}.png");
         try
         {
+            Directory.CreateDirectory(dir);
             using var fs = File.Create(path);
             var enc = new PngBitmapEncoder();
             enc.Frames.Add(BitmapFrame.Create(img));
@@ -61,8 +99,9 @@ public static class Screenshot
         }
         catch (Exception ex) { ShellHost.ShowAlert("The screenshot couldn’t be saved.", ex.Message); return; }
         Sound.Play("screenshot");
+        if (to == "preview") { Apps.Preview.PreviewWindow.Open(path); return; }
         Flash();
-        ShowThumbnail(img, path);
+        if (Settings.Current.CaptureThumbnail) ShowThumbnail(img, path);
     }
 
     static void Flash()
@@ -79,7 +118,8 @@ public static class Screenshot
         w.BeginAnimation(UIElement.OpacityProperty, a);
     }
 
-    static void ShowThumbnail(BitmapSource img, string path)
+    /// <summary>The floating thumbnail in the corner for a few seconds: a click opens the file, dragging takes it along.</summary>
+    public static void ShowThumbnail(BitmapSource img, string path)
     {
         double tw = 170, th = tw * img.PixelHeight / Math.Max(1, img.PixelWidth);
         var border = new Border
@@ -163,7 +203,7 @@ public static class Screenshot
                 if (r.Width < 4 || r.Height < 4) return;
                 double s = ShellHost.Scale;
                 int x = (int)(ShellHost.ScreenPx.Left + r.X * s), y = (int)(ShellHost.ScreenPx.Top + r.Y * s), w = (int)(r.Width * s), h = (int)(r.Height * s);
-                Dispatcher.BeginInvoke(() => Save(Capture(x, y, w, h)), DispatcherPriority.ApplicationIdle);
+                Dispatcher.BeginInvoke(() => Deliver(Capture(x, y, w, h, Settings.Current.CaptureShowPointer)), DispatcherPriority.ApplicationIdle);
             };
         }
     }

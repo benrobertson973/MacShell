@@ -84,7 +84,9 @@ public class QuickLookWindow : MacWindow
         _item = item;
         _title.Text = item.DisplayName;
         _media?.Stop(); _media?.Close(); _media = null;
-        string app = item.IsFolder ? "Finder" : DefaultAppName(item.Extension);
+        string app = item.IsFolder ? "Finder"
+            : OpenWith.HasMacShellDefault(item.FullPath) ? OpenWith.DefaultFor(item.FullPath)?.Name
+            : DefaultAppName(item.Extension);
         _openWith.Content = item.IsApp || app == null ? "Open" : $"Open with {app}";
         var wa = SystemParameters.WorkArea;
         double w = 760, h = 560;

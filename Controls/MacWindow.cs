@@ -20,6 +20,8 @@ public class MacWindow : Window
 {
     public string AppKey { get; }
     public bool UseVibrancy { get; set; } = true;
+    /// <summary>The window may cover the menu bar (a movie in full screen).</summary>
+    public bool AllowUnderMenuBar { get; set; }
     IntPtr _hwnd;
 
     public MacWindow(string appKey = WindowTracker.FinderKey, double captionHeight = 52)
@@ -95,7 +97,7 @@ public class MacWindow : Window
 
     IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
     {
-        if (msg == WM_WINDOWPOSCHANGING && ShellHost.TakeoverEnabled && WindowState == WindowState.Normal)
+        if (msg == WM_WINDOWPOSCHANGING && ShellHost.TakeoverEnabled && WindowState == WindowState.Normal && !AllowUnderMenuBar)
         {
             // like macOS: the window's top edge never goes under the menu bar
             var pos = Marshal.PtrToStructure<WINDOWPOS>(lParam);
@@ -142,7 +144,8 @@ public class MacWindow : Window
     /// <summary>Override to intercept ⌘W (e.g. closing a tab). Return true when handled.</summary>
     protected virtual bool HandleCloseShortcut() { Close(); return true; }
 
-    public void ToggleZoom() => WindowState = WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;
+    /// <summary>The green button: maximized and back (a movie goes full screen instead).</summary>
+    public virtual void ToggleZoom() => WindowState = WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;
 
     /// <summary>Centres the window on the primary work area, with the classic slight upward bias.</summary>
     public void CenterOnWorkArea(double topBias = 0.42)

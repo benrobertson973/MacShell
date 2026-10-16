@@ -303,6 +303,8 @@ public class SpotlightWindow : Window
         yield return ("Preview", "@preview", "", "", Apps.Preview.PreviewWindow.OpenApp);
         yield return ("Mail", "@mail", "", "", Apps.Mail.MailWindow.OpenApp);
         yield return ("Notes", "@notes", "", "", Apps.Notes.NotesWindow.OpenApp);
+        yield return ("QuickTime Player", "@quicktime", "", "", Apps.QuickTime.QuickTimeWindow.OpenApp);
+        yield return ("New Screen Recording", "record.circle", "#8E8E93", "#636366", Apps.QuickTime.ScreenRecorder.Start);
         yield return ("Launchpad", "@launchpad", "", "", LaunchpadWindow.Toggle);
         yield return ("Mission Control", "rectangle.stack", "#5E5CE6", "#3634A3", MissionControlWindow.Toggle);
         yield return ("Trash", "trash", "#8E8E93", "#636366", () => ShellHost.OpenFinder(FinderLocation.Trash));

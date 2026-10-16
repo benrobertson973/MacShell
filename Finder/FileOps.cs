@@ -296,9 +296,12 @@ public static class FileOps
 /// <summary>macOS-like UI sounds using Windows' built-in system sounds where available.</summary>
 public static class Sound
 {
+    /// <summary>Tests: never a sound.</summary>
+    public static bool Muted { get; set; }
+
     public static void Play(string what)
     {
-        if (!Settings.Current.SoundEffects) return;
+        if (Muted || !Settings.Current.SoundEffects) return;
         try
         {
             string media = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "Media");

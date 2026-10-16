@@ -133,6 +133,27 @@ public class AppSettings
     public string NotesLastNote { get; set; }
     /// <summary>Notes was put in the Dock (once: taken out, it stays out).</summary>
     public bool NotesPinned { get; set; }
+    /// <summary>QuickTime Player: its volume (0-1), and the movies opened lately (newest first).</summary>
+    public double QuickTimeVolume { get; set; } = 0.8;
+    public List<string> QuickTimeRecent { get; set; } = new();
+    /// <summary>Movies turned or flipped in QuickTime (Edit › Rotate / Flip), by path: quarter turns clockwise (0-3), +4 flipped
+    /// left to right, +8 flipped upside down.</summary>
+    public Dictionary<string, int> QuickTimeTurns { get; set; } = new();
+    /// <summary>
+    /// Screenshots and screen recordings (the ⇧⌘5 toolbar's Options): where each goes ("desktop", "documents",
+    /// "clipboard", "preview", "quicktime" or a folder's path), the timer (seconds), the floating thumbnail, the portion
+    /// kept for next time (screen pixels: x, y, width, height), clicks and the pointer shown, and the modes last used.
+    /// </summary>
+    public string ScreenshotSaveTo { get; set; } = "desktop";
+    public string RecordingSaveTo { get; set; } = "desktop";
+    public int CaptureTimer { get; set; }
+    public bool CaptureThumbnail { get; set; } = true;
+    public bool CaptureRememberSelection { get; set; } = true;
+    public int[] CaptureSelection { get; set; }
+    public bool CaptureShowClicks { get; set; }
+    public bool CaptureShowPointer { get; set; }
+    public string CaptureMode { get; set; } = "CapturePortion";
+    public string CaptureRecordMode { get; set; } = "RecordScreen";
 }
 
 public static class Settings

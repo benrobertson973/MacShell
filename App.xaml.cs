@@ -29,6 +29,18 @@ public partial class App : Application
             return;
         }
 
+        // the QuickTime probe: test movies and the screen recorder, silent and offscreen
+        int qtProbe = Array.IndexOf(args, "--qt-probe");
+        if (qtProbe >= 0 && qtProbe + 1 < e.Args.Length)
+        {
+            LogPath = Path.Combine(e.Args[qtProbe + 1], "probe.log");
+            DispatcherUnhandledException += (_, ev) => { Log("qt probe: " + ev.Exception); ev.Handled = true; };
+            try { MacShell.Apps.QuickTime.QuickTimeProbe.Run(e.Args[qtProbe + 1]); }
+            catch (Exception ex) { Log("qt probe: " + ex); }
+            Shutdown();
+            return;
+        }
+
         // the notes probe: Notes run offscreen on a library of their own (a copy beside the running MacShell)
         int notesProbe = Array.IndexOf(args, "--notes-probe");
         if (notesProbe >= 0 && notesProbe + 1 < e.Args.Length)

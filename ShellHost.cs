@@ -29,6 +29,11 @@ public static class ShellHost
     static DispatcherTimer _maintain;
     static List<IntPtr> _shownDesktopMinimized;
     static bool _fullscreen;
+    /// <summary>One of MacShell's own windows in full screen (a movie): the menu bar and the Dock hide while it's in front.</summary>
+    public static IntPtr OwnFullscreen { get; set; }
+
+    /// <summary>The menu bar and the Dock checked again for a full-screen window in front (one of MacShell's own changed).</summary>
+    public static void RecheckFullscreen() => UI.BeginInvoke(CheckFullscreen);
 
     public static Dispatcher UI => Application.Current.Dispatcher;
 
@@ -270,7 +275,10 @@ public static class ShellHost
         {
             if (vk == 0x33) { Post(() => Screenshot.CaptureFullScreen()); return true; }
             if (vk == 0x34) { Post(() => Screenshot.CaptureArea()); return true; }
+            if (vk == 0x35) { Post(Apps.QuickTime.ScreenRecorder.ShowToolbar); return true; }
         }
+        // ⌃⌘Esc: stop the screen recording
+        if (mods == (Mods.Ctrl | Mods.Win) && vk == VK_ESCAPE && Apps.QuickTime.ScreenRecorder.Recording) { Post(Apps.QuickTime.ScreenRecorder.Stop); return true; }
         if (mods == (Mods.Ctrl | Mods.Alt) && vk == VK_ESCAPE) { Post(ForceQuitWindow.ShowWindow); return true; }
         if (mods == (Mods.Win | Mods.Alt) && vk == VK_ESCAPE) { Post(ForceQuitWindow.ShowWindow); return true; }
         if (mods == (Mods.Ctrl | Mods.Alt | Mods.Shift) && vk == 0x51) { Post(Quit); return true; }
@@ -361,6 +369,10 @@ public static class ShellHost
             case "notes": Apps.Notes.NotesWindow.OpenApp(); break;
             case "notestest": Apps.Notes.NotesWindow.Test(arg); break;   // diagnostics: notestest:sample | format | roundtrip | cleanup
             case "notesstate": File.WriteAllText(Path.Combine(Settings.DataDirectory, "notesstate.txt"), Apps.Notes.NotesWindow.TestState()); break;
+            case "quicktime": if (string.IsNullOrEmpty(arg)) Apps.QuickTime.QuickTimeWindow.OpenApp(); else Apps.QuickTime.QuickTimeWindow.Open(arg, silent: true); break;   // (tests: muted, never a sound)
+            case "qttest": Apps.QuickTime.QuickTimeWindow.Test(arg); break;   // diagnostics: qttest:play | pause | seek | controls | full | pip | rotate | flip | bigger | smaller | float | close
+            case "qtstate": File.WriteAllText(Path.Combine(Settings.DataDirectory, "qtstate.txt"), Apps.QuickTime.QuickTimeWindow.TestState()); break;
+            case "screenrecord": Apps.QuickTime.ScreenRecorder.Test(arg); break;   // diagnostics: screenrecord:start | stop | state
             case "winfo":   // diagnostics: winfo:<title> - a window's sizes → winfo.txt
                 if (Application.Current.Windows.Cast<Window>().FirstOrDefault(w => w.Title == arg) is { } wi)
                 {
@@ -663,6 +675,7 @@ public static class ShellHost
             case Apps.Preview.PreviewWindow.AppId: Apps.Preview.PreviewWindow.OpenApp(); break;
             case Apps.Mail.MailWindow.AppId: Apps.Mail.MailWindow.OpenApp(); break;
             case Apps.Notes.NotesWindow.AppId: Apps.Notes.NotesWindow.OpenApp(); break;
+            case Apps.QuickTime.QuickTimeWindow.AppId: Apps.QuickTime.QuickTimeWindow.OpenApp(); break;
             case "internal:missioncontrol": MissionControlWindow.Toggle(); break;
             case "internal:trash": OpenFinder(FinderLocation.Trash); break;
             case "internal:downloads": OpenFinder(GetKnownFolder(FOLDERID_Downloads)); break;
@@ -673,6 +686,7 @@ public static class ShellHost
     {
         if (key == "internal:settings") SettingsWindow.Instance?.Close();
         else if (key == Apps.Notes.NotesWindow.AppId) Apps.Notes.NotesWindow.Instance?.Close();
+        else if (key == Apps.QuickTime.QuickTimeWindow.AppId) Apps.QuickTime.QuickTimeWindow.QuitApp();
         else if (key == Apps.Preview.PreviewWindow.AppId) { foreach (var w in Apps.Preview.PreviewWindow.All.ToList()) w.Close(); Apps.Preview.PreviewPanels.CloseAll(); }
         else if (key == Apps.Mail.MailWindow.AppId)
         {
@@ -742,7 +756,8 @@ public static class ShellHost
         if (MenuBar == null || Dock == null) return;
         var fg = GetForegroundWindow();
         bool fs = false;
-        if (fg != IntPtr.Zero)
+        if (fg != IntPtr.Zero && fg == OwnFullscreen) fs = true;
+        else if (fg != IntPtr.Zero)
         {
             GetWindowThreadProcessId(fg, out uint pid);
             if (pid != (uint)Environment.ProcessId)
@@ -842,6 +857,10 @@ public static class ShellHost
 
     public static void Quit()
     {
+        // (the checks stop first: the menu bar and the Dock close on the way out, and aren't to be shown again)
+        _maintain?.Stop();
+        _relayout?.Stop();
+        try { Apps.QuickTime.ScreenRecorder.StopForQuit(); } catch { }
         try { Settings.SaveNow(); } catch { }
         try { Apps.Preview.PreviewWindow.AutoSaveAll(); } catch { }
         try { WindowGuard.Release(); } catch { }
