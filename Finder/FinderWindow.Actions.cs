@@ -287,6 +287,7 @@ public partial class FinderWindow
                 foreach (var w in All) { w.BuildSidebar(); w.HighlightSidebar(); }
             }) : null,
             !string.IsNullOrEmpty(_tab.Search) || FinderLocation.IsVirtual(_tab.Location) ? Mb.Item("Show in Enclosing Folder", () => ShellHost.RevealInFinder(first.FullPath)) : null,
+            _tab.Location == FinderLocation.Recents && string.IsNullOrEmpty(_tab.Search) ? IgnoreTypeMenuItems(sel.Where(s => !s.IsFolder).Select(s => s.FullPath)) : null,
             Mb.Sub("Services",
                 first.IsFolder ? Mb.Item("New Terminal at Folder", () => FileOps.OpenInTerminal(first.FullPath)) : null,
                 Mb.Item("Copy as Pathname", () => Execute("copyPath")),

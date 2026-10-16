@@ -852,12 +852,29 @@ public partial class FinderWindow : MacWindow, IFinderHost
         catch (Exception ex) { return (null, ex.Message); }
     }
 
+    /// <summary>Leaves a kind of file (".png"; "" = no extension) out of Recents from now on - Finder's and the Dock's;
+    /// Finder windows showing Recents are shown again without it.</summary>
+    public static void IgnoreInRecents(string type, bool ignore = true)
+    {
+        var list = Settings.Current.RecentsIgnoredTypes;
+        list.RemoveAll(t => string.Equals(t, type, StringComparison.OrdinalIgnoreCase));
+        if (ignore) list.Add(type.ToLowerInvariant());
+        Settings.Save();
+        foreach (var w in All.ToList()) if (w.CurrentLocation == FinderLocation.Recents) w.Reload(true);
+    }
+
+    /// <summary>"Ignore “.png” Files" menu items for the kinds of these files (Recents' right-click menus).</summary>
+    public static IEnumerable<object> IgnoreTypeMenuItems(IEnumerable<string> files, Action after = null) =>
+        files.Select(Settings.RecentsType).Distinct().Take(4).Select(t => (object)Mb.Item(
+            t.Length == 0 ? "Ignore Files With No Extension" : $"Ignore “{t}” Files", () => { IgnoreInRecents(t); after?.Invoke(); }));
+
     internal static List<FileItem> LoadRecents(CancellationToken ct)
     {
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var result = new List<(FileItem item, DateTime when)>();
+        // (kinds of file left out of Recents - right-click an item › Ignore … Files - never come back here)
         foreach (var p in Settings.Current.RecentDocs.ToList())
-            if (File.Exists(p) && seen.Add(p)) result.Add((FileItem.FromInfo(new FileInfo(p)), DateTime.Now));
+            if (File.Exists(p) && !Settings.RecentsIgnores(p) && seen.Add(p)) result.Add((FileItem.FromInfo(new FileInfo(p)), DateTime.Now));
         try
         {
             string recent = Environment.GetFolderPath(Environment.SpecialFolder.Recent);
@@ -869,7 +886,7 @@ public partial class FinderWindow : MacWindow, IFinderHost
                 try
                 {
                     string target = wsh.CreateShortcut(l.FullName).TargetPath;
-                    if (string.IsNullOrEmpty(target) || !File.Exists(target) || !seen.Add(target)) continue;
+                    if (string.IsNullOrEmpty(target) || !File.Exists(target) || Settings.RecentsIgnores(target) || !seen.Add(target)) continue;
                     result.Add((FileItem.FromInfo(new FileInfo(target)), l.LastWriteTime));
                 }
                 catch { }
@@ -892,6 +909,7 @@ public partial class FinderWindow : MacWindow, IFinderHost
                     {
                         if (f.LastWriteTime < cutoff || f.Name.StartsWith(".") || f.Name.Equals("desktop.ini", StringComparison.OrdinalIgnoreCase)) continue;
                         if (f.FullName.Contains("\\node_modules\\") || f.FullName.Contains("\\.git\\") || f.FullName.Contains("\\bin\\") || f.FullName.Contains("\\obj\\")) continue;
+                        if (Settings.RecentsIgnores(f.FullName)) continue;
                         if (seen.Add(f.FullName)) result.Add((FileItem.FromInfo(f), f.LastWriteTime));
                     }
                 }

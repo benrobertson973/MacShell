@@ -761,6 +761,17 @@ public class SettingsWindow : MacWindow
             Row("Show hidden files", Switch(s.ShowHiddenFiles, v => { Settings.Current.ShowHiddenFiles = v; Save(); foreach (var w in Finder.FinderWindow.All) w.Reload(true); })),
             Row("Show path bar", Switch(s.FinderShowPathBar, v => { Settings.Current.FinderShowPathBar = v; Save(); })),
             Row("Show status bar", Switch(s.FinderShowStatusBar, v => { Settings.Current.FinderShowStatusBar = v; Save(); })));
+        SectionTitle("Recents");
+        if (s.RecentsIgnoredTypes.Count == 0)
+            Group(Row("Ignored kinds of file", Txt("None", 13, brush: "SecondaryLabelBrush"), "Right-click an item in Recents (Finder’s, or the Dock’s) › Ignore “.png” Files to leave that kind of file out"));
+        else
+            Group(s.RecentsIgnoredTypes.OrderBy(t => t).Select(t =>
+            {
+                var again = new Button { Content = "Show Again", Style = (Style)Application.Current.Resources["MacButton"], MinWidth = 0 };
+                string type = t;
+                again.Click += (_, _) => { Finder.FinderWindow.IgnoreInRecents(type, false); Open("finder", false); };
+                return Row(t.Length == 0 ? "Files with no extension" : $"“{t}” files", again, "Left out of Recents");
+            }).ToArray());
         SectionTitle("Tags");
         Group(Row("Tagged items", Txt($"{s.Tags.Count} items", 12, brush: "SecondaryLabelBrush"), "Tags are stored by MacShell and shown in the Finder sidebar"));
     }

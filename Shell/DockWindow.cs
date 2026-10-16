@@ -1336,6 +1336,36 @@ public class DockWindow : Window
                 foreach (var path in chosen) AppCatalog.OpenFile(path);
             }
 
+            // right-click an item: Open, Show in Finder, and Ignore “.png” Files (that kind of file left out of Recents)
+            bool menuOpen = false;
+            area.PreviewMouseRightButtonUp += (_, e) =>
+            {
+                var c = CellAt(e.GetPosition(area));
+                if (c == null) return;
+                e.Handled = true;
+                if (!c.Selected) { foreach (var x in cells) x.Selected = false; c.Selected = true; anchor = cells.IndexOf(c); Paint(); }
+                var chosen = cells.Where(x => x.Selected).ToList();
+                var cm = Mb.Context(
+                    Mb.Item(chosen.Count > 1 ? $"Open {chosen.Count} Items" : "Open", OpenSelected),
+                    Mb.Item("Show in Finder", () => { w.Close(); ShellHost.RevealInFinder(c.File.FullPath); }),
+                    Mb.Sep(),
+                    FinderWindow.IgnoreTypeMenuItems(chosen.Where(x => !x.File.IsFolder).Select(x => x.File.FullPath), () =>
+                    {
+                        // gone from the stack at once (and from Finder's Recents)
+                        foreach (var x in cells.Where(x => !x.File.IsFolder && Settings.RecentsIgnores(x.File.FullPath)).ToList())
+                        {
+                            grid.Children.Remove(x.Root);
+                            cells.Remove(x);
+                        }
+                        if (cells.Count == 0) grid.Children.Add(new TextBlock { Text = "No Items", Margin = new Thickness(0, 20, 0, 20), Opacity = 0.5, Width = 4 * 92, TextAlignment = TextAlignment.Center });
+                        Paint();
+                    }));
+                cm.Placement = PlacementMode.MousePoint;
+                menuOpen = true;
+                cm.Closed += (_, _) => { menuOpen = false; if (!closing && !w.IsActive) w.Close(); };
+                cm.IsOpen = true;
+            };
+
             _test = what =>
             {
                 if (what == "all") { foreach (var c in cells) c.Selected = true; Paint(); }
@@ -1357,7 +1387,7 @@ public class DockWindow : Window
             };
 
             w.Closing += (_, _) => closing = true;
-            w.Deactivated += (_, _) => { if (!closing && !dragging) w.Close(); };
+            w.Deactivated += (_, _) => { if (!closing && !dragging && !menuOpen) w.Close(); };
             w.KeyDown += (_, e) =>
             {
                 if (e.Key == Key.Escape && !closing) w.Close();

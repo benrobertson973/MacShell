@@ -50,6 +50,8 @@ public class AppSettings
     public List<string> SidebarFavorites { get; set; }
     public List<string> RecentApps { get; set; } = new();
     public List<string> RecentDocs { get; set; } = new();
+    /// <summary>Kinds of file left out of Recents (Finder's and the Dock's): extensions such as ".log" ("" = files with none).</summary>
+    public List<string> RecentsIgnoredTypes { get; set; } = new();
     public bool HideWindowsTaskbar { get; set; } = true;
     /// <summary>Show running apps' notification-area (tray) icons in the menu bar, like macOS menu extras.</summary>
     public bool MenuBarTrayIcons { get; set; } = true;
@@ -157,7 +159,16 @@ public static class Settings
         Current.FilePanelExpanded ??= new();
         Current.RecentApps ??= new();
         Current.RecentDocs ??= new();
+        Current.RecentsIgnoredTypes ??= new();
     }
+
+    /// <summary>The kind of file a path is, as Recents leaves kinds out: its extension, lowercase (".png"; "" for none).</summary>
+    public static string RecentsType(string path) => (Path.GetExtension(path) ?? "").ToLowerInvariant();
+
+    public static bool RecentsIgnores(string path) => Current.RecentsIgnoredTypes.Contains(RecentsType(path), StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>How a kind of file is named to people: ".png" → "PNG", "" → "with no extension".</summary>
+    public static string RecentsTypeName(string type) => string.IsNullOrEmpty(type) ? "Files With No Extension" : type.TrimStart('.').ToUpperInvariant();
 
     /// <summary>Persists settings (debounced) and notifies listeners.</summary>
     public static void Save(bool notify = true)
