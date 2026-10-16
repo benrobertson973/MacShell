@@ -125,6 +125,26 @@ public class AppSettings
     public double? EatingHudTop { get; set; }
     /// <summary>The alarm played when the timer ends: a sound in Windows\Media (without ".wav").</summary>
     public string TimerSound { get; set; } = "Alarm01";
+    /// <summary>Scroll bars: "auto" (shown while the pointer is over them), "scrolling" (only while scrolling) or "always".</summary>
+    public string ScrollBars { get; set; } = "auto";
+    /// <summary>Light/Dark also switches Windows apps' own light or dark mode.</summary>
+    public bool SyncWindowsAppearance { get; set; }
+    /// <summary>Dock icons bounce while their app opens.</summary>
+    public bool DockAnimateOpening { get; set; } = true;
+    /// <summary>What each screen corner does when the pointer goes there (top left, top right, bottom left, bottom right):
+    /// "" nothing, "missioncontrol", "desktop", "notifications", "launchpad", "screensaver", "displaysleep", "lock".</summary>
+    public string[] HotCorners { get; set; }
+    /// <summary>Kinds of Spotlight result not shown: "Applications", "Calculator", "Documents", "Folders", "System",
+    /// "System Settings", "Web".</summary>
+    public List<string> SpotlightHidden { get; set; } = new();
+    /// <summary>Folders Spotlight leaves out of its results (Spotlight Privacy).</summary>
+    public List<string> SpotlightExcluded { get; set; } = new();
+    /// <summary>Temperatures in °C (true) or °F (the weather in the menu bar).</summary>
+    public bool Celsius { get; set; }
+    /// <summary>Apps whose Dock badge isn't shown (Notifications › the app › Badge application icon off).</summary>
+    public List<string> BadgesOff { get; set; } = new();
+    /// <summary>Accessibility › Increase contrast: stronger borders and separators in MacShell's own windows.</summary>
+    public bool IncreaseContrast { get; set; }
 }
 
 public static class Settings
@@ -160,7 +180,14 @@ public static class Settings
         Current.RecentApps ??= new();
         Current.RecentDocs ??= new();
         Current.RecentsIgnoredTypes ??= new();
+        Current.SpotlightHidden ??= new();
+        Current.SpotlightExcluded ??= new();
+        Current.BadgesOff ??= new();
+        if (Current.HotCorners is not { Length: 4 }) Current.HotCorners = new[] { "", "", "", "" };
     }
+
+    /// <summary>Settings are only read, never saved (the settings probe, a test copy).</summary>
+    public static bool ReadOnly { get; set; }
 
     /// <summary>The kind of file a path is, as Recents leaves kinds out: its extension, lowercase (".png"; "" for none).</summary>
     public static string RecentsType(string path) => (Path.GetExtension(path) ?? "").ToLowerInvariant();
@@ -174,6 +201,7 @@ public static class Settings
     public static void Save(bool notify = true)
     {
         if (notify) Changed?.Invoke();
+        if (ReadOnly) return;
         if (_saveTimer == null)
         {
             _saveTimer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(400) };
@@ -185,6 +213,7 @@ public static class Settings
 
     public static void SaveNow()
     {
+        if (ReadOnly) return;
         try
         {
             Directory.CreateDirectory(Dir);

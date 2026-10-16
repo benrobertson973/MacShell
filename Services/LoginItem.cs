@@ -40,6 +40,9 @@ public static class LoginItem
         });
     }
 
+    /// <summary>Only finds out whether MacShell opens at login, changing nothing (the settings probe).</summary>
+    public static void ReadState() => Enabled = HasRunKey() || QueryTaskExe() != null;
+
     public static void Set(bool on)
     {
         Enabled = on;

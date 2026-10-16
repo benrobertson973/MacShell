@@ -29,6 +29,8 @@ public static class ShellHost
     static DispatcherTimer _maintain;
     static List<IntPtr> _shownDesktopMinimized;
     static bool _fullscreen;
+    /// <summary>An app fills the screen (a game, a video): the menu bar and the Dock are hidden.</summary>
+    public static bool FullscreenAppInFront => _fullscreen;
 
     public static Dispatcher UI => Application.Current.Dispatcher;
 
@@ -39,6 +41,7 @@ public static class ShellHost
         LoginItem.Initialize();
         Controls.MenuFit.Install();
         Theme.Apply();
+        Theme.ApplyScrollBars();
         ComputeMetrics();
         Wallpaper.Load();
         AppCatalog.Loaded += () =>
@@ -79,6 +82,7 @@ public static class ShellHost
         WindowTracker.ForegroundChanged += CheckFullscreen;
         Badges.Start();
         Updater.Start();
+        HotCorners.Start();
 
         _hook = new KeyboardHook(UI)
         {

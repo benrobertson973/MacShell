@@ -265,8 +265,18 @@ public static class Weather
     public static string PlaceName => Settings.Current.WeatherLat != null ? Settings.Current.WeatherPlace : Place ?? Settings.Current.WeatherAutoPlace;
     public static bool Automatic => Settings.Current.WeatherLat == null;
 
-    /// <summary>"72°" (rounded; never "-0°").</summary>
-    public static string Degrees(double? f) => f is double v ? (int)Math.Round(v, MidpointRounding.AwayFromZero) + "°" : "--°";
+    /// <summary>"72°" (rounded; never "-0°") - in °C when Settings › Control Center › Temperature says so (the weather
+    /// itself is kept in °F).</summary>
+    public static string Degrees(double? f)
+    {
+        if (f is not double v) return "--°";
+        if (Settings.Current.Celsius) v = (v - 32) * 5 / 9;
+        int r = (int)Math.Round(v, MidpointRounding.AwayFromZero);
+        return (r == 0 ? 0 : r) + "°";
+    }
+
+    /// <summary>Everything showing the weather shows it again (the temperature unit changed).</summary>
+    public static void Refresh() => Changed?.Invoke();
 
     /// <summary>The glyph for a WMO weather code, by day or night.</summary>
     public static string Symbol(int code, bool day) => code switch

@@ -229,6 +229,10 @@ public class SpotlightWindow : Window
             Open = () => { try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("https://www.google.com/search?q=" + Uri.EscapeDataString(q)) { UseShellExecute = true }); } catch { } Close(); },
         });
 
+        // the kinds of result switched off in Settings › Spotlight
+        var hidden = Settings.Current.SpotlightHidden;
+        if (hidden.Count > 0) list.RemoveAll(r => hidden.Contains(r.Group));
+
         // Top Hit = best non-web result
         var top1 = list.FirstOrDefault(r => r.Group is "Applications" or "Calculator") ?? list.FirstOrDefault(r => r.Group != "Web");
         if (top1 != null) { list.Remove(top1); top1.Group = "Top Hit"; list.Insert(0, top1); }
@@ -241,6 +245,11 @@ public class SpotlightWindow : Window
     {
         string q = _box.Text.Trim();
         if (q.Length < 2) return;
+        var hidden = Settings.Current.SpotlightHidden;
+        bool docs = !hidden.Contains("Documents"), dirs = !hidden.Contains("Folders");
+        if (!docs && !dirs) return;
+        // (Settings › Spotlight › Spotlight Privacy: folders whose files are left out)
+        var excluded = Settings.Current.SpotlightExcluded.Select(f => f.TrimEnd('\\') + "\\").ToList();
         var cts = _cts = new CancellationTokenSource();
         Task.Run(() => FinderWindow.SearchIndex(q, 150), cts.Token).ContinueWith(t =>
         {
@@ -248,13 +257,14 @@ public class SpotlightWindow : Window
             Dispatcher.BeginInvoke(() =>
             {
                 if (cts.IsCancellationRequested || _box.Text.Trim() != q) return;
-                var files = t.Result.Where(f => !Regex.IsMatch(f.FullPath, @"\\(node_modules|\.git|obj|bin|\.vs|\.next|dist|build|__pycache__|site-packages|AppData)\\", RegexOptions.IgnoreCase)).ToList();
-                var folders = files.Where(f => f.IsFolder).Take(5).ToList();
-                var docs = files.Where(f => !f.IsFolder).OrderByDescending(f => Score(f.Name, q)).ThenByDescending(f => f.Modified).Take(10).ToList();
+                var files = t.Result.Where(f => !Regex.IsMatch(f.FullPath, @"\\(node_modules|\.git|obj|bin|\.vs|\.next|dist|build|__pycache__|site-packages|AppData)\\", RegexOptions.IgnoreCase)
+                                                && !excluded.Any(x => f.FullPath.StartsWith(x, StringComparison.OrdinalIgnoreCase))).ToList();
+                var folders = dirs ? files.Where(f => f.IsFolder).Take(5).ToList() : new List<FileItem>();
+                var documents = docs ? files.Where(f => !f.IsFolder).OrderByDescending(f => Score(f.Name, q)).ThenByDescending(f => f.Modified).Take(10).ToList() : new List<FileItem>();
                 int insertAt = _results.FindIndex(r => r.Group == "Web");
                 if (insertAt < 0) insertAt = _results.Count;
                 var extra = new List<Result>();
-                foreach (var f in docs) extra.Add(FileResult(f, "Documents"));
+                foreach (var f in documents) extra.Add(FileResult(f, "Documents"));
                 foreach (var f in folders) extra.Add(FileResult(f, "Folders"));
                 _results.InsertRange(insertAt, extra);
                 if (extra.Count > 0 && !_results.Any(r => r.Group == "Top Hit"))

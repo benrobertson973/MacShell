@@ -9,7 +9,7 @@ public partial class App : Application
 {
     Mutex _mutex;
     EventWaitHandle _quitEvent, _openEvent;
-    static readonly string LogPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "MacShell", "macshell.log");
+    static string LogPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "MacShell", "macshell.log");
 
     protected override void OnStartup(StartupEventArgs e)
     {
@@ -25,6 +25,20 @@ public partial class App : Application
         if (args.Contains("--quit"))
         {
             if (EventWaitHandle.TryOpenExisting("MacShell.Quit", out var q)) q.Set();
+            Shutdown();
+            return;
+        }
+
+        // the settings probe: every System Settings page rendered offscreen to PNGs (a copy beside the running MacShell;
+        // nothing is saved, nothing taken over)
+        int probeIdx = Array.IndexOf(args, "--settings-probe");
+        if (probeIdx >= 0 && probeIdx + 1 < e.Args.Length)
+        {
+            LogPath = Path.Combine(e.Args[probeIdx + 1], "probe.log");   // (MacShell's own log is left alone)
+            DispatcherUnhandledException += (_, ev) => { Log("settings probe: " + ev.Exception); ev.Handled = true; };
+            int pageIdx = Array.IndexOf(args, "--page");
+            try { MacShell.Apps.SettingsWindow.Probe(e.Args[probeIdx + 1], args.Contains("--dark"), pageIdx >= 0 && pageIdx + 1 < e.Args.Length ? e.Args[pageIdx + 1] : null); }
+            catch (Exception ex) { Log("settings probe: " + ex); }
             Shutdown();
             return;
         }

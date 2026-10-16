@@ -168,7 +168,67 @@ public static class Theme
             r["FolderLabelBrush"] = B("#D9FFFFFF");
             r["QuickLookBackgroundBrush"] = B("#F0282828");
         }
+        if (s.IncreaseContrast)
+        {
+            // Accessibility › Display › Increase contrast: darker edges on groups, controls and separators
+            r["SeparatorBrush"] = B(IsDark ? "#40FFFFFF" : "#40000000");
+            r["StrongSeparatorBrush"] = B(IsDark ? "#80FFFFFF" : "#66000000");
+            r["GroupBoxBorderBrush"] = B(IsDark ? "#66FFFFFF" : "#59000000");
+            r["ControlBorderBrush"] = B(IsDark ? "#80FFFFFF" : "#73000000");
+            r["MenuBorderBrush"] = B(IsDark ? "#B3FFFFFF" : "#80000000");
+            r["SecondaryLabelBrush"] = B(IsDark ? "#B3FFFFFF" : "#A6000000");
+        }
         Changed?.Invoke();
+    }
+
+    /// <summary>Settings › Appearance with "Windows apps follow this appearance": Windows' own light or dark mode set to match.</summary>
+    public static void SyncWindows()
+    {
+        string mode = Settings.Current.Appearance;
+        if (mode is not ("light" or "dark")) return;   // (Auto follows Windows)
+        int light = mode == "light" ? 1 : 0;
+        const string key = @"HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize";
+        if (Native.SysParams.RegDword(key, "AppsUseLightTheme", -1) == light && Native.SysParams.RegDword(key, "SystemUsesLightTheme", -1) == light) return;
+        Native.SysParams.SetRegDword(key, "AppsUseLightTheme", light);
+        Native.SysParams.SetRegDword(key, "SystemUsesLightTheme", light);
+        Native.SysParams.Broadcast("ImmersiveColorSet");
+    }
+
+    static Style _autoScrollViewer;
+    static bool _scrollHooked;
+
+    /// <summary>Settings › Appearance › Show scroll bars: the scroll views' style swapped for every window.</summary>
+    public static void ApplyScrollBars()
+    {
+        var r = Application.Current.Resources;
+        _autoScrollViewer ??= r[typeof(System.Windows.Controls.ScrollViewer)] as Style;
+        var style = Settings.Current.ScrollBars switch
+        {
+            "always" => r["ScrollViewerAlways"] as Style,
+            "scrolling" => r["ScrollViewerScrolling"] as Style,
+            _ => _autoScrollViewer,
+        };
+        if (style != null && !ReferenceEquals(r[typeof(System.Windows.Controls.ScrollViewer)], style)) r[typeof(System.Windows.Controls.ScrollViewer)] = style;
+        if (_scrollHooked) return;
+        _scrollHooked = true;
+        EventManager.RegisterClassHandler(typeof(System.Windows.Controls.ScrollViewer), System.Windows.Controls.ScrollViewer.ScrollChangedEvent,
+            new System.Windows.Controls.ScrollChangedEventHandler(OnScrolled));
+    }
+
+    /// <summary>"When scrolling": the bars show while a view scrolls, then fade.</summary>
+    static void OnScrolled(object sender, System.Windows.Controls.ScrollChangedEventArgs e)
+    {
+        if (Settings.Current.ScrollBars != "scrolling" || (e.VerticalChange == 0 && e.HorizontalChange == 0)) return;
+        if (sender is not System.Windows.Controls.ScrollViewer sv || sv.Template == null) return;
+        foreach (var name in new[] { "PART_VerticalScrollBar", "PART_HorizontalScrollBar" })
+        {
+            if (sv.Template.FindName(name, sv) is not UIElement bar) continue;
+            var a = new System.Windows.Media.Animation.DoubleAnimationUsingKeyFrames();
+            a.KeyFrames.Add(new System.Windows.Media.Animation.LinearDoubleKeyFrame(1, System.Windows.Media.Animation.KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(90))));
+            a.KeyFrames.Add(new System.Windows.Media.Animation.LinearDoubleKeyFrame(1, System.Windows.Media.Animation.KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(900))));
+            a.KeyFrames.Add(new System.Windows.Media.Animation.LinearDoubleKeyFrame(0, System.Windows.Media.Animation.KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(1250))));
+            bar.BeginAnimation(UIElement.OpacityProperty, a);
+        }
     }
 
     public static Color Darken(Color c, double amt) =>

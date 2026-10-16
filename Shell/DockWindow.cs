@@ -290,9 +290,9 @@ public class DockWindow : Window
             if (!WindowTracker.CycleWindows(running)) WindowTracker.ActivateApp(running);
             return;
         }
-        if (AppCatalog.Launch(it.Target ?? it.ExePath))
+        if (AppCatalog.Launch(it.Target ?? it.ExePath) && Settings.Current.DockAnimateOpening)
         {
-            it.BounceStart = Environment.TickCount64 / 1000.0;
+            it.BounceStart = Environment.TickCount64 / 1000.0;   // (Settings › Desktop & Dock › Animate opening applications)
             _surface.Kick();
         }
     }
