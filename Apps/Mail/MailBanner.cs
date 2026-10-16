@@ -23,6 +23,7 @@ public sealed class MailBanner : Window
     public static void Show(List<MailMessageInfo> fresh)
     {
         if (fresh == null || fresh.Count == 0) return;
+        if (Settings.Current.DoNotDisturb) return;   // (Focus › Do Not Disturb: the Dock's badge still counts it)
         _shown?.Close();
         _shown = new MailBanner(fresh);
         _shown.Show();

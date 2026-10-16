@@ -174,6 +174,10 @@ public class AppSettings
     public bool CaptureShowPointer { get; set; }
     public string CaptureMode { get; set; } = "CapturePortion";
     public string CaptureRecordMode { get; set; } = "RecordScreen";
+    /// <summary>Focus › Do Not Disturb is on (MacShell's banners held back, notification sounds off), and what Windows'
+    /// notification-sound setting was before it.</summary>
+    public bool DoNotDisturb { get; set; }
+    public int? DndSoundWas { get; set; }
 }
 
 public static class Settings

@@ -136,11 +136,26 @@ public static class PowerSettings
             int full = Math.Max(1, health?.FullMWh ?? 1);
             foreach (var e in doc.Descendants(ns + "UsageEntry"))
             {
+                // an entry: where the charge was when it began, how long it lasted (100 ns units) and how much was used
+                // (negative: charged) - so where it ended too; charging is taken to go about 60% an hour until full
                 if (!DateTime.TryParse(e.Attribute("LocalTimestamp")?.Value ?? e.Attribute("Timestamp")?.Value, out var t)) continue;
                 if (!int.TryParse(e.Attribute("ChargeCapacity")?.Value, out int cap)) continue;
                 int fcc = int.TryParse(e.Attribute("FullChargeCapacity")?.Value, out int f) && f > 0 ? f : full;
                 bool ac = e.Attribute("Ac")?.Value == "1";
-                usage.Add(new UsagePoint(t, Math.Clamp((int)Math.Round(100.0 * cap / fcc), 0, 100), ac));
+                int start = Math.Clamp((int)Math.Round(100.0 * cap / fcc), 0, 100);
+                usage.Add(new UsagePoint(t, start, ac));
+                if (ulong.TryParse(e.Attribute("Duration")?.Value, out ulong dur) && dur < (ulong)TimeSpan.FromDays(30).Ticks
+                    && int.TryParse(e.Attribute("Discharge")?.Value, out int used))
+                {
+                    var t1 = t + TimeSpan.FromTicks((long)dur);
+                    int end = Math.Clamp((int)Math.Round(100.0 * (cap - used) / fcc), 0, 100);
+                    if (ac && end > start)
+                    {
+                        var full100 = t + TimeSpan.FromHours((end - start) / 60.0);
+                        if (full100 < t1) usage.Add(new UsagePoint(full100, end, ac));
+                    }
+                    usage.Add(new UsagePoint(t1, end, ac));
+                }
             }
             usage = usage.OrderBy(u => u.Time).ToList();
             _report = (health, usage, DateTime.Now);

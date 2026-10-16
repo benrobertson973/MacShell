@@ -149,11 +149,24 @@ public class MenuBarWindow : Window
         if (_recordButton != null) _recordButton.Visibility = on ? Visibility.Visible : Visibility.Collapsed;
     }
 
-    StatusButton _recordButton;
+    StatusButton _recordButton, _focusButton;
+
+    /// <summary>Do Not Disturb went on or off: its moon in the menu bar (a click: Focus settings).</summary>
+    public void RefreshFocus()
+    {
+        if (_focusButton != null) _focusButton.Visibility = Settings.Current.DoNotDisturb ? Visibility.Visible : Visibility.Collapsed;
+    }
 
     void BuildStatusItems()
     {
         _right.Children.Clear();
+        var moon = new SymbolIcon { Symbol = "moon", Width = 15, Height = 15, StrokeWidth = 1.9, Foreground = _text };
+        _focusButton = new StatusButton(moon, _ => SettingsWindow.ShowPane("focus"))
+        {
+            ToolTip = "Do Not Disturb",
+            Visibility = Settings.Current.DoNotDisturb ? Visibility.Visible : Visibility.Collapsed,
+        };
+        _right.Children.Add(_focusButton);
         var stop = new SymbolIcon { Symbol = "stop.circle", Width = 16, Height = 16, StrokeWidth = 1.7, Foreground = _text };
         _recordButton = new StatusButton(stop, _ => Apps.QuickTime.ScreenRecorder.Stop())
         {

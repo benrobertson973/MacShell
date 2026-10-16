@@ -150,12 +150,16 @@ public class ControlCenterWindow : Popover
         var rightCol = new Grid();
         rightCol.RowDefinitions.Add(new RowDefinition());
         rightCol.RowDefinitions.Add(new RowDefinition());
+        // Focus: Do Not Disturb on and off (the moon lit while it's on), as on a Mac
+        bool dnd = Settings.Current.DoNotDisturb;
         var focus = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
-        focus.Children.Add(Circle("moon", false, 28));
-        focus.Children.Add(new StackPanel { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 0, 0), Children = { T("Focus", 13, FontWeights.SemiBold) } });
+        focus.Children.Add(Circle("moon", dnd, 28));
+        var focusText = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 0, 0), Children = { T(dnd ? "Do Not Disturb" : "Focus", 13, FontWeights.SemiBold) } };
+        if (dnd) focusText.Children.Add(T("On", 11, brush: "SecondaryLabelBrush"));
+        focus.Children.Add(focusText);
         var focusMod = Module(focus, 10);
         focusMod.Cursor = Cursors.Hand;
-        focusMod.MouseLeftButtonUp += (_, _) => { OpenUri("ms-settings:notifications"); Close(); };
+        focusMod.MouseLeftButtonUp += (_, _) => { DoNotDisturb.Set(!Settings.Current.DoNotDisturb); Close(); };
         rightCol.Children.Add(focusMod);
         var small = new Grid();
         small.ColumnDefinitions.Add(new ColumnDefinition());
