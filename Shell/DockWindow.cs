@@ -1074,12 +1074,32 @@ public class DockWindow : Window
 
     // ================================================================== Recents stack
 
-    /// <summary>Grid-style stack popover showing the most recent files: Finder's Recents, newest first.</summary>
+    /// <summary>
+    /// Grid-style stack popover showing the most recent files: Finder's Recents, newest first. A click opens an item;
+    /// dragging a box over items (or ⌘- / Shift-clicking them) selects several, and dragging a selected item takes
+    /// them all - their icons follow the pointer while the originals fade, and the stack steps aside once the drag
+    /// leaves it so whatever is under it can take the drop.
+    /// </summary>
     public static class StackPopup
     {
         static Window _win;
         static bool _loading;
+        static Action<string> _test;
         public static bool IsOpen => _win != null;
+
+        /// <summary>Diagnostics (--open stacktest:all | none | box:x,y,w,h | info): selects in the open stack as the pointer
+        /// would (box: a selection box, DIPs inside the grid); info writes the selection to stack.txt.</summary>
+        public static void Test(string what) => _test?.Invoke(what);
+
+        class Cell
+        {
+            public FileItem File;
+            public FrameworkElement Root;
+            public Border IconBack, NameBack;
+            public TextBlock Name;
+            public Image Img;
+            public bool Selected;
+        }
 
         public static void ShowRecents(DockWindow dock, DockItem item)
         {
@@ -1118,36 +1138,233 @@ public class DockWindow : Window
             header.SetResourceReference(TextBlock.ForegroundProperty, "LabelBrush");
             stack.Children.Add(header);
             var grid = new WrapPanel { Width = 4 * 92 };
+            var cells = new List<Cell>();
             foreach (var f in entries)
             {
-                var cell = new StackPanel { Width = 92, Margin = new Thickness(0, 0, 0, 8), Background = Brushes.Transparent, Cursor = Cursors.Hand };
-                var img = new Image { Width = 56, Height = 56, Margin = new Thickness(0, 0, 0, 4) };
-                if (f.IsFolder) img.Source = MacIcons.Folder(MacIcons.FolderGlyphFor(f.FullPath));
-                else ShellIcons.Load(f.FullPath, 128, ShellIcons.IsThumbnailType(f.FullPath), b => img.Source = b ?? MacIcons.GenericDocument);
-                var name = new TextBlock { Text = f.Name, TextAlignment = TextAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis, MaxWidth = 86, TextWrapping = TextWrapping.Wrap, MaxHeight = 32 };
-                name.SetResourceReference(TextBlock.ForegroundProperty, "LabelBrush");
-                cell.Children.Add(img); cell.Children.Add(name);
-                string path = f.FullPath;
-                cell.MouseLeftButtonUp += (_, _) => { w.Close(); AppCatalog.OpenFile(path); };
-                cell.MouseMove += (_, e) =>
-                {
-                    if (e.LeftButton == MouseButtonState.Pressed)
-                        DragDrop.DoDragDrop(cell, new DataObject(DataFormats.FileDrop, new[] { path }), DragDropEffects.Copy | DragDropEffects.Move);
-                };
-                grid.Children.Add(cell);
+                var c = new Cell { File = f };
+                var sp = new StackPanel { Width = 92, Margin = new Thickness(0, 0, 0, 8), Background = Brushes.Transparent, Cursor = Cursors.Hand };
+                c.Img = new Image { Width = 56, Height = 56 };
+                RenderOptions.SetBitmapScalingMode(c.Img, BitmapScalingMode.HighQuality);
+                if (f.IsFolder) c.Img.Source = MacIcons.Folder(MacIcons.FolderGlyphFor(f.FullPath));
+                else ShellIcons.Load(f.FullPath, 128, ShellIcons.IsThumbnailType(f.FullPath), b => c.Img.Source = b ?? MacIcons.GenericDocument);
+                c.IconBack = new Border { CornerRadius = new CornerRadius(6), Padding = new Thickness(3), HorizontalAlignment = HorizontalAlignment.Center, Child = c.Img, Margin = new Thickness(0, 0, 0, 2) };
+                c.Name = new TextBlock { Text = f.Name, TextAlignment = TextAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis, MaxWidth = 80, TextWrapping = TextWrapping.Wrap, MaxHeight = 32 };
+                c.NameBack = new Border { CornerRadius = new CornerRadius(4), Padding = new Thickness(4, 0, 4, 1), HorizontalAlignment = HorizontalAlignment.Center, Child = c.Name };
+                sp.Children.Add(c.IconBack); sp.Children.Add(c.NameBack);
+                c.Root = sp;
+                cells.Add(c);
+                grid.Children.Add(sp);
             }
             if (entries.Count == 0) grid.Children.Add(new TextBlock { Text = "No Items", Margin = new Thickness(0, 20, 0, 20), Opacity = 0.5, Width = 4 * 92, TextAlignment = TextAlignment.Center });
+
             stack.Children.Add(grid);
             var open = new Button { Content = "Open in Finder", Style = (Style)Application.Current.Resources["MacButton"], HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 4, 0, 0) };
             open.Click += (_, _) => { w.Close(); ShellHost.OpenFinder(finderLocation); };
             stack.Children.Add(open);
-            outer.Child = stack;
+            // the whole stack is what a selection box is dragged on - from anywhere that isn't an icon, a name or the
+            // button (the gaps around and between the items, the margins) - with the box drawn over it
+            var area = new Grid { Background = Brushes.Transparent };
+            area.Children.Add(stack);
+            var box = new System.Windows.Shapes.Rectangle { StrokeThickness = 1, RadiusX = 2, RadiusY = 2, Visibility = Visibility.Collapsed, IsHitTestVisible = false, HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Top };
+            area.Children.Add(box);
+            outer.Child = area;
             w.Content = outer;
-            bool closing = false;
+            bool closing = false, dragging = false;
+
+            void Paint()
+            {
+                foreach (var c in cells)
+                {
+                    if (c.Selected)
+                    {
+                        c.IconBack.Background = new SolidColorBrush(Theme.IsDark ? Color.FromArgb(0x38, 0xFF, 0xFF, 0xFF) : Color.FromArgb(0x24, 0, 0, 0));
+                        c.NameBack.SetResourceReference(Border.BackgroundProperty, "SelectionBrush");
+                        c.Name.Foreground = Brushes.White;
+                    }
+                    else
+                    {
+                        c.IconBack.Background = Brushes.Transparent;
+                        c.NameBack.Background = Brushes.Transparent;
+                        c.Name.SetResourceReference(TextBlock.ForegroundProperty, "LabelBrush");
+                    }
+                }
+            }
+            Paint();
+
+            Rect Bounds(Cell c) => c.Root.ActualWidth > 0 ? c.Root.TransformToAncestor(area).TransformBounds(new Rect(c.Root.RenderSize)) : Rect.Empty;
+            // an item is its icon and its name - not the empty space around them, where a selection box starts
+            IEnumerable<Rect> Parts(Cell c) => c.Root.ActualWidth > 0
+                ? new FrameworkElement[] { c.IconBack, c.NameBack }.Select(e => e.TransformToAncestor(area).TransformBounds(new Rect(e.RenderSize)))
+                : Enumerable.Empty<Rect>();
+            Cell CellAt(Point p) => cells.FirstOrDefault(c => Parts(c).Any(r => r.Contains(p)));
+            void SelectInBox(Rect r, HashSet<Cell> keep)
+            {
+                foreach (var c in cells) c.Selected = keep.Contains(c) || Parts(c).Any(b => b.IntersectsWith(r));
+                Paint();
+            }
+            static bool OnButton(object source)
+            {
+                for (var d = source as DependencyObject; d != null; d = d is Visual ? VisualTreeHelper.GetParent(d) : LogicalTreeHelper.GetParent(d))
+                    if (d is ButtonBase) return true;
+                return false;
+            }
+
+            Point start = default;
+            Cell pressed = null;
+            bool boxing = false;
+            int anchor = -1;
+            ModifierKeys mods = ModifierKeys.None;
+            HashSet<Cell> before = new();
+
+            area.PreviewMouseLeftButtonDown += (_, e) =>
+            {
+                if (OnButton(e.OriginalSource)) return;   // ("Open in Finder")
+                start = e.GetPosition(area);
+                mods = Keyboard.Modifiers;
+                pressed = CellAt(start);
+                boxing = false;
+                bool add = (mods & (ModifierKeys.Control | ModifierKeys.Shift)) != 0;
+                if (pressed != null)
+                {
+                    int idx = cells.IndexOf(pressed);
+                    if ((mods & ModifierKeys.Control) != 0) { pressed.Selected = !pressed.Selected; anchor = idx; }
+                    else if ((mods & ModifierKeys.Shift) != 0 && anchor >= 0)
+                    {
+                        for (int i = Math.Min(anchor, idx); i <= Math.Max(anchor, idx); i++) cells[i].Selected = true;
+                    }
+                    else if (!pressed.Selected) { foreach (var c in cells) c.Selected = false; pressed.Selected = true; anchor = idx; }
+                    else anchor = idx;
+                    Paint();
+                }
+                else
+                {
+                    before = add ? cells.Where(c => c.Selected).ToHashSet() : new HashSet<Cell>();
+                    if (!add) { foreach (var c in cells) c.Selected = false; Paint(); }
+                }
+                area.CaptureMouse();
+                e.Handled = true;
+            };
+
+            area.MouseMove += (_, e) =>
+            {
+                if (!area.IsMouseCaptured || e.LeftButton != MouseButtonState.Pressed || dragging) return;
+                var p = e.GetPosition(area);
+                bool moved = Math.Abs(p.X - start.X) >= SystemParameters.MinimumHorizontalDragDistance || Math.Abs(p.Y - start.Y) >= SystemParameters.MinimumVerticalDragDistance;
+                if (pressed != null)
+                {
+                    if (moved) StartDrag();
+                    return;
+                }
+                if (!moved && !boxing) return;
+                boxing = true;
+                var r = new Rect(new Point(Math.Clamp(start.X, 0, area.ActualWidth), Math.Clamp(start.Y, 0, area.ActualHeight)),
+                                 new Point(Math.Clamp(p.X, 0, area.ActualWidth), Math.Clamp(p.Y, 0, area.ActualHeight)));
+                box.Margin = new Thickness(r.X, r.Y, 0, 0);
+                box.Width = Math.Max(1, r.Width);
+                box.Height = Math.Max(1, r.Height);
+                var acc = Theme.Accent;
+                box.Fill = new SolidColorBrush(Color.FromArgb(0x33, acc.R, acc.G, acc.B));
+                box.Stroke = new SolidColorBrush(Color.FromArgb(0xB0, acc.R, acc.G, acc.B));
+                box.Visibility = Visibility.Visible;
+                SelectInBox(r, before);
+            };
+
+            area.PreviewMouseLeftButtonUp += (_, e) =>
+            {
+                if (!area.IsMouseCaptured) return;   // (not a press of ours: the button's)
+                var p = pressed;
+                bool wasBox = boxing;
+                if (area.IsMouseCaptured) area.ReleaseMouseCapture();
+                box.Visibility = Visibility.Collapsed;
+                boxing = false;
+                pressed = null;
+                e.Handled = true;
+                if (dragging) return;
+                // a plain click on an item opens it (as a stack does); ⌘/Shift-clicks only select
+                if (p != null && !wasBox && (mods & (ModifierKeys.Control | ModifierKeys.Shift)) == 0)
+                {
+                    w.Close();
+                    AppCatalog.OpenFile(p.File.FullPath);
+                }
+            };
+            area.LostMouseCapture += (_, _) => { if (!dragging) { box.Visibility = Visibility.Collapsed; boxing = false; } };
+
+            void StartDrag()
+            {
+                var from = pressed;
+                dragging = true;
+                pressed = null;
+                if (area.IsMouseCaptured) area.ReleaseMouseCapture();
+                if (!from.Selected) { foreach (var c in cells) c.Selected = false; from.Selected = true; }
+                Paint();
+                // the item under the pointer leads (its icon on top), the others follow in the stack's order
+                var chosen = cells.Where(c => c.Selected).OrderBy(c => c == from ? 0 : 1).ToList();
+                foreach (var c in chosen) c.Root.Opacity = 0.4;
+                var data = new DataObject(DataFormats.FileDrop, chosen.Select(c => c.File.FullPath).ToArray());
+                var icons = chosen.Select(c => c.Img.Source ?? (c.File.IsFolder ? MacIcons.Folder() : MacIcons.GenericDocument)).ToList();
+                DragDropEffects done = DragDropEffects.None;
+                try { done = DragGhost.Run(area, data, DragDropEffects.Copy | DragDropEffects.Move | DragDropEffects.Link, icons, 56); }
+                catch (Exception ex) { App.Log("recents stack drag: " + ex.Message); }
+                finally
+                {
+                    dragging = false;
+                    foreach (var c in chosen) c.Root.Opacity = 1;
+                    // dropped somewhere (or the stack stepped aside for it): the stack is done; let go over the stack: it stays
+                    if (!closing && (done != DragDropEffects.None || !w.IsVisible)) w.Close();
+                }
+            }
+
+            // once a drag leaves the stack, the stack steps aside so the desktop, a folder or the Dock under it gets the drop
+            outer.AllowDrop = true;
+            outer.DragOver += (_, e) => { e.Effects = DragDropEffects.None; e.Handled = true; };
+            outer.DragLeave += (_, _) =>
+            {
+                if (!dragging) return;
+                GetCursorPos(out var pt);
+                var src = PresentationSource.FromVisual(w);
+                if (src == null) return;
+                var tl = w.PointToScreen(new Point(0, 0));
+                var br = w.PointToScreen(new Point(w.ActualWidth, w.ActualHeight));
+                if (pt.X < tl.X || pt.Y < tl.Y || pt.X >= br.X || pt.Y >= br.Y) w.Hide();
+            };
+
+            void OpenSelected()
+            {
+                var chosen = cells.Where(c => c.Selected).Select(c => c.File.FullPath).ToList();
+                if (chosen.Count == 0) return;
+                w.Close();
+                foreach (var path in chosen) AppCatalog.OpenFile(path);
+            }
+
+            _test = what =>
+            {
+                if (what == "all") { foreach (var c in cells) c.Selected = true; Paint(); }
+                else if (what == "none") { foreach (var c in cells) c.Selected = false; Paint(); }
+                else if (what.StartsWith("box:"))
+                {
+                    var v = what[4..].Split(',').Select(s => double.Parse(s, CultureInfo.InvariantCulture)).ToArray();
+                    SelectInBox(new Rect(v[0], v[1], v[2], v[3]), new HashSet<Cell>());
+                    box.Margin = new Thickness(v[0], v[1], 0, 0); box.Width = v[2]; box.Height = v[3];
+                    var acc = Theme.Accent;
+                    box.Fill = new SolidColorBrush(Color.FromArgb(0x33, acc.R, acc.G, acc.B));
+                    box.Stroke = new SolidColorBrush(Color.FromArgb(0xB0, acc.R, acc.G, acc.B));
+                    box.Visibility = Visibility.Visible;
+                }
+                else if (what == "info")
+                    File.WriteAllText(Path.Combine(Settings.DataDirectory, "stack.txt"),
+                        $"items={cells.Count} selected={cells.Count(c => c.Selected)} [{string.Join(", ", cells.Select((c, i) => c.Selected ? i.ToString() : null).Where(s => s != null))}] " +
+                        $"cells: {string.Join(" ", cells.Take(4).Select(c => Bounds(c).ToString(CultureInfo.InvariantCulture)))}");
+            };
+
             w.Closing += (_, _) => closing = true;
-            w.Deactivated += (_, _) => { if (!closing) w.Close(); };
-            w.KeyDown += (_, e) => { if (e.Key == Key.Escape && !closing) w.Close(); };
-            w.Closed += (_, _) => _win = null;
+            w.Deactivated += (_, _) => { if (!closing && !dragging) w.Close(); };
+            w.KeyDown += (_, e) =>
+            {
+                if (e.Key == Key.Escape && !closing) w.Close();
+                else if (e.Key == Key.Return) OpenSelected();
+                else if (e.Key == Key.A && Keyboard.Modifiers == ModifierKeys.Control) { foreach (var c in cells) c.Selected = true; Paint(); }
+            };
+            w.Closed += (_, _) => { _win = null; _test = null; };
             _win = w;
             w.Loaded += (_, _) =>
             {

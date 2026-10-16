@@ -344,6 +344,7 @@ public static class ShellHost
                     break;
                 }
             case "dockrecents": Dock?.TestRecents(); break;
+            case "stacktest": DockWindow.StackPopup.Test(arg ?? "info"); break;   // diagnostics: stacktest:all | none | box:x,y,w,h | info → stack.txt
             case "mailtest":   // diagnostics: mailtest:add|remove - an account on a test mail server on this computer (IMAP 1143, SMTP 1025)
                 if (arg == "add" && Apps.Mail.MailService.Accounts.All(a => a.Provider != Apps.Mail.MailProvider.Test))
                 {
