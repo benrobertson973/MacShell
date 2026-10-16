@@ -358,6 +358,9 @@ public static class ShellHost
                     _ = MailTestAsync(arg, ts);
                 break;
             case "mailopen": Apps.Mail.MailWindow.OpenApp(); break;
+            case "notes": Apps.Notes.NotesWindow.OpenApp(); break;
+            case "notestest": Apps.Notes.NotesWindow.Test(arg); break;   // diagnostics: notestest:sample | format | roundtrip | cleanup
+            case "notesstate": File.WriteAllText(Path.Combine(Settings.DataDirectory, "notesstate.txt"), Apps.Notes.NotesWindow.TestState()); break;
             case "winfo":   // diagnostics: winfo:<title> - a window's sizes → winfo.txt
                 if (Application.Current.Windows.Cast<Window>().FirstOrDefault(w => w.Title == arg) is { } wi)
                 {
@@ -659,6 +662,7 @@ public static class ShellHost
             case "internal:settings": SettingsWindow.ShowPane(null); break;
             case Apps.Preview.PreviewWindow.AppId: Apps.Preview.PreviewWindow.OpenApp(); break;
             case Apps.Mail.MailWindow.AppId: Apps.Mail.MailWindow.OpenApp(); break;
+            case Apps.Notes.NotesWindow.AppId: Apps.Notes.NotesWindow.OpenApp(); break;
             case "internal:missioncontrol": MissionControlWindow.Toggle(); break;
             case "internal:trash": OpenFinder(FinderLocation.Trash); break;
             case "internal:downloads": OpenFinder(GetKnownFolder(FOLDERID_Downloads)); break;
@@ -668,6 +672,7 @@ public static class ShellHost
     public static void QuitInternal(string key)
     {
         if (key == "internal:settings") SettingsWindow.Instance?.Close();
+        else if (key == Apps.Notes.NotesWindow.AppId) Apps.Notes.NotesWindow.Instance?.Close();
         else if (key == Apps.Preview.PreviewWindow.AppId) { foreach (var w in Apps.Preview.PreviewWindow.All.ToList()) w.Close(); Apps.Preview.PreviewPanels.CloseAll(); }
         else if (key == Apps.Mail.MailWindow.AppId)
         {

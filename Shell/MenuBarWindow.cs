@@ -563,7 +563,26 @@ public class MenuBarWindow : Window
         else if (app.Key == "internal:settings") AddSettingsMenus();
         else if (app.Key == Apps.Preview.PreviewWindow.AppId) AddPreviewMenus();
         else if (app.Key == Apps.Mail.MailWindow.AppId) AddMailMenus();
+        else if (app.Key == Apps.Notes.NotesWindow.AppId) AddNotesMenus();
         else AddAppMenus(app);
+    }
+
+    void AddNotesMenus()
+    {
+        _menu.Items.Add(TopMenu("Notes", true, Apps.Notes.NotesWindow.MenuNotes()));
+        _menu.Items.Add(LiveMenu("File", Apps.Notes.NotesWindow.MenuFile));
+        _menu.Items.Add(TopMenu("Edit", false,
+            Mb.Item("Undo", () => ApplicationCommands.Undo.Execute(null, Keyboard.FocusedElement), "⌘Z"),
+            Mb.Item("Redo", () => ApplicationCommands.Redo.Execute(null, Keyboard.FocusedElement), "⇧⌘Z"),
+            Mb.Sep(),
+            Mb.Item("Cut", () => ApplicationCommands.Cut.Execute(null, Keyboard.FocusedElement), "⌘X"),
+            Mb.Item("Copy", () => ApplicationCommands.Copy.Execute(null, Keyboard.FocusedElement), "⌘C"),
+            Mb.Item("Paste", () => ApplicationCommands.Paste.Execute(null, Keyboard.FocusedElement), "⌘V"),
+            Mb.Item("Select All", () => ApplicationCommands.SelectAll.Execute(null, Keyboard.FocusedElement), "⌘A")));
+        _menu.Items.Add(LiveMenu("Format", Apps.Notes.NotesWindow.MenuFormat));
+        _menu.Items.Add(LiveMenu("View", Apps.Notes.NotesWindow.MenuView));
+        _menu.Items.Add(WindowMenu(WindowTracker.FindByKey(Apps.Notes.NotesWindow.AppId)));
+        _menu.Items.Add(HelpMenu("Notes"));
     }
 
     void AddMailMenus()

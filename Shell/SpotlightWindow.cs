@@ -211,7 +211,7 @@ public class SpotlightWindow : Window
         // built-in shell items and actions
         foreach (var (name, sym, top, bottom, act) in ShellActions())
             if (Score(name, q) > 0)
-                list.Add(new Result { Title = name, Group = "System", Kind = "System", Icon = sym == "@finder" ? MacIcons.Finder : sym == "@settings" ? MacIcons.SystemSettings : sym == "@preview" ? MacIcons.Preview : sym == "@mail" ? MacIcons.Mail : sym == "@launchpad" ? MacIcons.Launchpad : MacIcons.Tile(sym, top, bottom), Open = () => { Close(); act(); } });
+                list.Add(new Result { Title = name, Group = "System", Kind = "System", Icon = sym == "@finder" ? MacIcons.Finder : sym == "@settings" ? MacIcons.SystemSettings : sym == "@preview" ? MacIcons.Preview : sym == "@mail" ? MacIcons.Mail : sym == "@notes" ? MacIcons.Notes : sym == "@quicktime" ? MacIcons.QuickTime :sym == "@launchpad" ? MacIcons.Launchpad : MacIcons.Tile(sym, top, bottom), Open = () => { Close(); act(); } });
 
         // settings panes
         foreach (var pane in SettingsWindow.Panes)
@@ -302,6 +302,7 @@ public class SpotlightWindow : Window
         yield return ("System Settings", "@settings", "", "", () => SettingsWindow.ShowPane(null));
         yield return ("Preview", "@preview", "", "", Apps.Preview.PreviewWindow.OpenApp);
         yield return ("Mail", "@mail", "", "", Apps.Mail.MailWindow.OpenApp);
+        yield return ("Notes", "@notes", "", "", Apps.Notes.NotesWindow.OpenApp);
         yield return ("Launchpad", "@launchpad", "", "", LaunchpadWindow.Toggle);
         yield return ("Mission Control", "rectangle.stack", "#5E5CE6", "#3634A3", MissionControlWindow.Toggle);
         yield return ("Trash", "trash", "#8E8E93", "#636366", () => ShellHost.OpenFinder(FinderLocation.Trash));

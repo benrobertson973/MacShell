@@ -9,7 +9,7 @@ public partial class App : Application
 {
     Mutex _mutex;
     EventWaitHandle _quitEvent, _openEvent;
-    static readonly string LogPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "MacShell", "macshell.log");
+    static string LogPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "MacShell", "macshell.log");
 
     protected override void OnStartup(StartupEventArgs e)
     {
@@ -25,6 +25,18 @@ public partial class App : Application
         if (args.Contains("--quit"))
         {
             if (EventWaitHandle.TryOpenExisting("MacShell.Quit", out var q)) q.Set();
+            Shutdown();
+            return;
+        }
+
+        // the notes probe: Notes run offscreen on a library of their own (a copy beside the running MacShell)
+        int notesProbe = Array.IndexOf(args, "--notes-probe");
+        if (notesProbe >= 0 && notesProbe + 1 < e.Args.Length)
+        {
+            LogPath = Path.Combine(e.Args[notesProbe + 1], "probe.log");
+            DispatcherUnhandledException += (_, ev) => { Log("notes probe: " + ev.Exception); ev.Handled = true; };
+            try { MacShell.Apps.Notes.NotesProbe.Run(e.Args[notesProbe + 1], args.Contains("--dark")); }
+            catch (Exception ex) { Log("notes probe: " + ex); }
             Shutdown();
             return;
         }

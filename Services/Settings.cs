@@ -125,6 +125,14 @@ public class AppSettings
     public double? EatingHudTop { get; set; }
     /// <summary>The alarm played when the timer ends: a sound in Windows\Media (without ".wav").</summary>
     public string TimerSound { get; set; } = "Alarm01";
+    /// <summary>Notes' window (DIPs: left, top, width, height), its sidebar and list widths, the folder and note shown last.</summary>
+    public double[] NotesWindowBounds { get; set; }
+    public double NotesSidebarWidth { get; set; } = 200;
+    public double NotesListWidth { get; set; } = 290;
+    public string NotesFolder { get; set; }
+    public string NotesLastNote { get; set; }
+    /// <summary>Notes was put in the Dock (once: taken out, it stays out).</summary>
+    public bool NotesPinned { get; set; }
 }
 
 public static class Settings
@@ -162,6 +170,9 @@ public static class Settings
         Current.RecentsIgnoredTypes ??= new();
     }
 
+    /// <summary>Settings are only read, never saved (the settings probe, a test copy).</summary>
+    public static bool ReadOnly { get; set; }
+
     /// <summary>The kind of file a path is, as Recents leaves kinds out: its extension, lowercase (".png"; "" for none).</summary>
     public static string RecentsType(string path) => (Path.GetExtension(path) ?? "").ToLowerInvariant();
 
@@ -174,6 +185,7 @@ public static class Settings
     public static void Save(bool notify = true)
     {
         if (notify) Changed?.Invoke();
+        if (ReadOnly) return;
         if (_saveTimer == null)
         {
             _saveTimer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(400) };
@@ -185,6 +197,7 @@ public static class Settings
 
     public static void SaveNow()
     {
+        if (ReadOnly) return;
         try
         {
             Directory.CreateDirectory(Dir);
