@@ -112,7 +112,8 @@ public sealed class NotesWindow : MacWindow
 
     void BuildChrome()
     {
-        _sideCol.Width = new GridLength(Math.Clamp(Settings.Current.NotesSidebarWidth, 0, 340));
+        _listShowFolders = ToolButton("sidebar.left", "Show Folders", ToggleSidebar);
+        _sideCol.Width = new GridLength(Math.Clamp(Settings.Current.NotesSidebarWidth, 150, 340));
         _listCol.Width = new GridLength(Math.Clamp(Settings.Current.NotesListWidth, 220, 520));
         _layout.ColumnDefinitions.Add(_sideCol);
         _layout.ColumnDefinitions.Add(_listCol);
@@ -152,7 +153,13 @@ public sealed class NotesWindow : MacWindow
         _layout.Children.Add(side);
         var split1 = new GridSplitter { Width = 5, HorizontalAlignment = HorizontalAlignment.Right, Background = Brushes.Transparent, ResizeBehavior = GridResizeBehavior.CurrentAndNext };
         WindowChrome.SetIsHitTestVisibleInChrome(split1, true);
-        split1.DragCompleted += (_, _) => Remember();
+        split1.DragCompleted += (_, _) =>
+        {
+            // dragged nearly shut: the folders are hidden (and the window's buttons move to the list)
+            if (_sideCol.ActualWidth < 120) _sideCol.Width = new GridLength(0);
+            SidebarShown();
+            Remember();
+        };
         _layout.Children.Add(split1);
 
         // ---------------- the note list
@@ -163,6 +170,15 @@ public sealed class NotesWindow : MacWindow
         Grid.SetColumn(listEdge, 1);
         _layout.Children.Add(listEdge);
         var listBar = new DockPanel { Height = 52, LastChildFill = false };
+        // (with the folders hidden, the window's buttons move to the list's top-left, as on a Mac)
+        _listLights.Margin = new Thickness(20, 0, 0, 0);
+        _listLights.Visibility = Visibility.Collapsed;
+        DockPanel.SetDock(_listLights, Dock.Left);
+        listBar.Children.Add(_listLights);
+        _listShowFolders.Visibility = Visibility.Collapsed;
+        _listShowFolders.Margin = new Thickness(10, 0, 0, 0);
+        DockPanel.SetDock(_listShowFolders, Dock.Left);
+        listBar.Children.Add(_listShowFolders);
         var trash = ToolButton("trash", "Delete", DeleteSelected);
         trash.Margin = new Thickness(0, 0, 10, 0);
         DockPanel.SetDock(trash, Dock.Right);
@@ -219,10 +235,21 @@ public sealed class NotesWindow : MacWindow
         Content = _layout;
     }
 
+    readonly TrafficLights _listLights = new();
+    Button _listShowFolders;
+
     void ToggleSidebar()
     {
-        if (_sideCol.Width.Value > 0) { Settings.Current.NotesSidebarWidth = _sideCol.ActualWidth; _sideCol.Width = new GridLength(0); }
+        if (_sideCol.Width.Value > 0) { Settings.Current.NotesSidebarWidth = Math.Max(150, _sideCol.ActualWidth); _sideCol.Width = new GridLength(0); }
         else _sideCol.Width = new GridLength(Math.Clamp(Settings.Current.NotesSidebarWidth, 150, 340));
+        SidebarShown();
+    }
+
+    void SidebarShown()
+    {
+        bool hidden = _sideCol.Width.Value < 1;
+        _listLights.Visibility = hidden ? Visibility.Visible : Visibility.Collapsed;
+        _listShowFolders.Visibility = hidden ? Visibility.Visible : Visibility.Collapsed;
     }
 
     void PlaceAsBefore()
@@ -625,10 +652,16 @@ public sealed class NotesWindow : MacWindow
         }
         else
         {
+            // (as in Notes on a Mac: pin; send a copy, move; duplicate, delete)
             items.Add(Mb.Item(chosen.All(n => n.Pinned) ? "Unpin Note" : "Pin Note", TogglePin));
             items.Add(Mb.Sep());
-            items.Add(Mb.Item("Delete", DeleteSelected));
-            items.Add(Mb.Item("Duplicate", () => { SaveCurrent(); var copy = NotesLibrary.Duplicate(chosen[0]); ShowFolder(_folder, copy.Id); }, enabled: chosen.Count == 1));
+            items.Add(Mb.Sub("Send a Copy",
+                Mb.Item(chosen.Count == 1 ? "Export to Apple Notes…" : $"Export {chosen.Count} Notes to Apple Notes…", () => { SaveCurrent(); NotesTransfer.Export(this, chosen, chosen.Count == 1 ? chosen[0].DisplayTitle : "Notes"); }),
+                Mb.Item("Copy Text", () =>
+                {
+                    SaveCurrent();
+                    try { Clipboard.SetText(string.Join("\n\n", chosen.Select(n => NotesLibrary.LoadDoc(n).PlainText().TrimEnd()))); } catch { }
+                })));
             items.Add(Mb.Sub("Move to", NotesLibrary.Folders.Select(f => (object)Mb.Item(f.Name, () =>
             {
                 SaveCurrent();
@@ -636,7 +669,8 @@ public sealed class NotesWindow : MacWindow
                 ShowFolder(_folder, null, keepScroll: true);
             }, enabled: chosen.Any(n => n.Folder != f.Id))).ToArray()));
             items.Add(Mb.Sep());
-            items.Add(Mb.Item(chosen.Count == 1 ? "Export to Apple Notes…" : $"Export {chosen.Count} Notes to Apple Notes…", () => { SaveCurrent(); NotesTransfer.Export(this, chosen, chosen.Count == 1 ? chosen[0].DisplayTitle : "Notes"); }));
+            items.Add(Mb.Item("Duplicate Note", () => { SaveCurrent(); var copy = NotesLibrary.Duplicate(chosen[0]); ShowFolder(_folder, copy.Id); }, enabled: chosen.Count == 1));
+            items.Add(Mb.Item(chosen.Count == 1 ? "Delete" : $"Delete {chosen.Count} Notes", DeleteSelected));
         }
         Mb.Context(items.ToArray()).IsOpen = true;
     }

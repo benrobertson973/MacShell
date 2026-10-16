@@ -5,6 +5,7 @@ using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
+using MacShell.Controls;
 using MacShell.Services;
 
 namespace MacShell.Apps.Notes;
@@ -46,6 +47,10 @@ public sealed class NoteEditor : RichTextBox
         PreviewDrop += OnDrop;
         PreviewMouseLeftButtonDown += (_, e) => _downAt = e.GetPosition(this);
         PreviewMouseLeftButtonUp += OnMouseUp;
+        PreviewMouseMove += (_, e) => Cursor = LinkAt(e.GetPosition(this)) != null ? Cursors.Hand : Cursors.IBeam;
+        AddHandler(Hyperlink.RequestNavigateEvent, new System.Windows.Navigation.RequestNavigateEventHandler((_, e) => { OpenUrl(e.Uri?.ToString()); e.Handled = true; }));
+        ContextMenu = new ContextMenu();
+        ContextMenuOpening += (_, e) => BuildContextMenu(e);
         Loaded += (_, _) => { CheckMarker.Toggled -= OnCheckToggled; CheckMarker.Toggled += OnCheckToggled; };
         Unloaded += (_, _) => CheckMarker.Toggled -= OnCheckToggled;
     }
@@ -66,6 +71,7 @@ public sealed class NoteEditor : RichTextBox
             Note = n;
             Document = NoteFlow.ToFlow(d, n);
             Document.PagePadding = new Thickness(0);
+            AutoLinkAll();   // (web addresses written before links were made)
             CaretPosition = Document.ContentEnd;
         }
         finally { _loading = false; }
@@ -208,30 +214,219 @@ public sealed class NoteEditor : RichTextBox
     public bool SelectionHas(TextDecorationLocation where) =>
         Selection.GetPropertyValue(Inline.TextDecorationsProperty) is TextDecorationCollection c && c.Any(d => d.Location == where);
 
-    /// <summary>A link on the selected words (Edit › Add Link, ⌘K).</summary>
+    /// <summary>A link on the selected words (Edit › Add Link, ⌘K) - or the link the caret is in, changed.</summary>
     public void AddLink(Window owner)
     {
-        if (Selection.IsEmpty) return;
-        string url = TextPrompt.Ask(owner, "Add Link", "The address the selected text links to:", "https://");
+        var existing = LinkAtPosition(Selection.Start);
+        if (Selection.IsEmpty && existing == null) return;
+        string url = TextPrompt.Ask(owner, existing != null ? "Edit Link" : "Add Link", "The address the text links to:", existing != null ? LinkUrl(existing) : "https://");
         if (string.IsNullOrWhiteSpace(url) || url == "https://") return;
-        if (!url.Contains("://") && !url.StartsWith("mailto:")) url = "https://" + url.Trim();
-        var h = new Hyperlink(Selection.Start, Selection.End) { Tag = url, Cursor = Cursors.Hand, Foreground = new SolidColorBrush(Color.FromRgb(0xB2, 0x84, 0x00)) };
-        if (Uri.TryCreate(url, UriKind.Absolute, out var u)) h.NavigateUri = u;
+        url = NormalizeUrl(url.Trim());
+        if (existing != null) { existing.Tag = url; if (Uri.TryCreate(url, UriKind.Absolute, out var eu)) existing.NavigateUri = eu; }
+        else MakeLink(Selection.Start, Selection.End, url);
         Edited?.Invoke();
+    }
+
+    static string NormalizeUrl(string url) =>
+        url.Contains("://") || url.StartsWith("mailto:", StringComparison.OrdinalIgnoreCase) ? url : url.Contains('@') && !url.Contains('/') ? "mailto:" + url : "https://" + url;
+
+    static Hyperlink MakeLink(TextPointer start, TextPointer end, string url)
+    {
+        var h = new Hyperlink(start, end) { Tag = url, Cursor = Cursors.Hand, Foreground = new SolidColorBrush(Color.FromRgb(0xB2, 0x84, 0x00)) };
+        if (Uri.TryCreate(url, UriKind.Absolute, out var u)) h.NavigateUri = u;
+        return h;
+    }
+
+    static string LinkUrl(Hyperlink h) => h.Tag as string ?? h.NavigateUri?.ToString();
+
+    static Hyperlink LinkAtPosition(TextPointer pos)
+    {
+        for (DependencyObject d = pos?.Parent; d != null; d = d is TextElement te ? te.Parent : null)
+            if (d is Hyperlink h) return h;
+        return null;
+    }
+
+    Hyperlink LinkAt(Point pt) => LinkAtPosition(GetPositionFromPoint(pt, false));
+
+    static void OpenUrl(string url)
+    {
+        if (string.IsNullOrWhiteSpace(url)) return;
+        try { Process.Start(new ProcessStartInfo(NormalizeUrl(url)) { UseShellExecute = true }); } catch (Exception ex) { App.Log("notes link: " + ex.Message); }
     }
 
     /// <summary>A click on a link opens it (as in Notes), unless the click was a drag selecting text.</summary>
     void OnMouseUp(object sender, MouseButtonEventArgs e)
     {
-        if (!Selection.IsEmpty || (e.GetPosition(this) - _downAt).Length > 3) return;
-        var pos = GetPositionFromPoint(e.GetPosition(this), false);
-        for (DependencyObject d = pos?.Parent; d != null; d = d is TextElement te ? te.Parent : null)
-            if (d is Hyperlink h && (h.Tag as string ?? h.NavigateUri?.ToString()) is string url)
-            {
-                try { Process.Start(new ProcessStartInfo(url) { UseShellExecute = true }); } catch { }
-                e.Handled = true;
-                return;
-            }
+        if ((e.GetPosition(this) - _downAt).Length > 3 || Keyboard.Modifiers.HasFlag(ModifierKeys.Shift)) return;
+        var h = LinkAt(e.GetPosition(this));
+        if (h == null) return;
+        OpenUrl(LinkUrl(h));
+        e.Handled = true;
+    }
+
+    // ------------------------------------------------------------------ web addresses become links by themselves
+
+    static readonly System.Text.RegularExpressions.Regex UrlInText = new(
+        @"(?<![\w@/.-])((?:https?://|www\.)[^\s<>""]+|[\w.+-]+@[\w-]+(?:\.[\w-]+)+|(?:[a-z0-9-]+\.)+(?:com|org|net|edu|gov|io|co|us|uk|ca|de|fr|app|dev|ai|me|tv|info|biz|ly|gg|nz|au)(?:/[^\s<>""]*)?)",
+        System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.Compiled);
+
+    /// <summary>A position this many characters (insertion positions) further on.</summary>
+    static TextPointer Forward(TextPointer p, int chars)
+    {
+        for (int i = 0; i < chars && p != null; i++) p = p.GetNextInsertionPosition(LogicalDirection.Forward);
+        return p;
+    }
+
+    /// <summary>The web addresses and email addresses in a paragraph, not yet links, made links.</summary>
+    void AutoLink(Paragraph p)
+    {
+        var start = TextStart(p);
+        string text = new TextRange(start, p.ContentEnd).Text;
+        var matches = UrlInText.Matches(text).Cast<System.Text.RegularExpressions.Match>().ToList();
+        // from the end, so earlier positions stay right
+        for (int i = matches.Count - 1; i >= 0; i--)
+        {
+            var m = matches[i];
+            string word = m.Value.TrimEnd('.', ',', ';', ':', '!', '?', ')', '\'', '"');
+            if (word.Length < 4 || word.Contains('\n')) continue;
+            var a = Forward(start.GetInsertionPosition(LogicalDirection.Forward), m.Index);
+            var b = Forward(a, word.Length);
+            if (a == null || b == null || LinkAtPosition(a.GetPositionAtOffset(1) ?? a) != null) continue;
+            if (new TextRange(a, b).Text != word) continue;   // (the paragraph has pieces that aren't text: leave it)
+            try { MakeLink(a, b, NormalizeUrl(word)); } catch { }
+        }
+    }
+
+    void AutoLinkAll()
+    {
+        foreach (var p in Document.Blocks.OfType<Paragraph>().ToList()) AutoLink(p);
+    }
+
+    /// <summary>The word just typed (before a space or Return) made a link if it's an address.</summary>
+    void LinkWordBeforeCaret()
+    {
+        var p = CaretPosition.Paragraph;
+        if (p == null || LinkAtPosition(CaretPosition) != null) return;
+        string before = new TextRange(TextStart(p), CaretPosition).Text;
+        var m = System.Text.RegularExpressions.Regex.Match(before, @"(\S+)$");
+        if (!m.Success || !UrlInText.IsMatch(m.Value)) return;
+        int caret = Document.ContentStart.GetOffsetToPosition(CaretPosition);
+        BeginChange();
+        try { AutoLink(p); }
+        finally { EndChange(); }
+        var back = Document.ContentStart.GetPositionAtOffset(caret);
+        // (the caret goes after the new link, not inside it)
+        if (LinkAtPosition(CaretPosition) is Hyperlink h) CaretPosition = h.ElementEnd;
+        else if (back != null) CaretPosition = back;
+    }
+
+    // ------------------------------------------------------------------ the right-click menu, as in Notes on a Mac
+
+    static dynamic _voice;
+
+    void BuildContextMenu(ContextMenuEventArgs e)
+    {
+        var cm = ContextMenu;
+        cm.Items.Clear();
+        var at = GetPositionFromPoint(Mouse.GetPosition(this), true) ?? CaretPosition;
+        // a click outside the selection moves the caret there first (as on a Mac)
+        if (!Selection.IsEmpty && !Selection.Contains(at)) Selection.Select(at, at);
+        else if (Selection.IsEmpty) CaretPosition = at;
+        string word = Selection.IsEmpty ? WordAt(at) : Selection.Text.Trim();
+        var err = GetSpellingError(at);
+        if (err != null)
+        {
+            var suggestions = err.Suggestions.Take(5).ToList();
+            foreach (var s in suggestions) Mb.Add(cm.Items, Mb.Item(s, () => { err.Correct(s); Edited?.Invoke(); }));
+            if (suggestions.Count == 0) Mb.Add(cm.Items, Mb.Item("No Guesses Found", enabled: false));
+            Mb.Add(cm.Items, Mb.Sep());
+            Mb.Add(cm.Items, Mb.Item("Ignore Spelling", () => err.IgnoreAll()));
+            Mb.Add(cm.Items, Mb.Sep());
+        }
+        if (!string.IsNullOrWhiteSpace(word))
+        {
+            string shortWord = word.Length > 24 ? word[..24].TrimEnd() + "…" : word;
+            string q = Uri.EscapeDataString(word);
+            Mb.Add(cm.Items, Mb.Item($"Look Up “{shortWord}”", () => OpenUrl("https://www.google.com/search?q=define+" + q)));
+            Mb.Add(cm.Items, Mb.Item($"Translate “{shortWord}”", () => OpenUrl("https://translate.google.com/?sl=auto&tl=en&op=translate&text=" + q)));
+            Mb.Add(cm.Items, Mb.Item("Search With Google", () => OpenUrl("https://www.google.com/search?q=" + q)));
+            Mb.Add(cm.Items, Mb.Sep());
+        }
+        bool sel = !Selection.IsEmpty;
+        Mb.Add(cm.Items, Mb.Item("Cut", () => ApplicationCommands.Cut.Execute(null, this), enabled: sel && !IsReadOnly));
+        Mb.Add(cm.Items, Mb.Item("Copy", () => ApplicationCommands.Copy.Execute(null, this), enabled: sel));
+        bool canPaste = false;
+        try { canPaste = !IsReadOnly && (Clipboard.ContainsText() || Clipboard.ContainsImage() || Clipboard.ContainsFileDropList()); } catch { }
+        Mb.Add(cm.Items, Mb.Item("Paste", () => ApplicationCommands.Paste.Execute(null, this), enabled: canPaste));
+        Mb.Add(cm.Items, Mb.Sep());
+        var link = LinkAtPosition(at);
+        if (link != null)
+        {
+            Mb.Add(cm.Items, Mb.Item("Open Link", () => OpenUrl(LinkUrl(link))));
+            Mb.Add(cm.Items, Mb.Item("Copy Link", () => { try { Clipboard.SetText(LinkUrl(link) ?? ""); } catch { } }));
+            Mb.Add(cm.Items, Mb.Item("Edit Link…", () => AddLink(Window.GetWindow(this)), enabled: !IsReadOnly));
+            Mb.Add(cm.Items, Mb.Item("Remove Link", () => RemoveLink(link), enabled: !IsReadOnly));
+        }
+        else Mb.Add(cm.Items, Mb.Item("Add Link…", () => AddLink(Window.GetWindow(this)), "⌘K", enabled: sel && !IsReadOnly));
+        Mb.Add(cm.Items, Mb.Sep());
+        if (!IsReadOnly)
+        {
+            Mb.Add(cm.Items, Mb.Sub("Font",
+                Mb.Item("Bold", () => EditingCommands.ToggleBold.Execute(null, this), "⌘B", isChecked: SelectionIs(TextElement.FontWeightProperty, FontWeights.Bold)),
+                Mb.Item("Italic", () => EditingCommands.ToggleItalic.Execute(null, this), "⌘I", isChecked: SelectionIs(TextElement.FontStyleProperty, FontStyles.Italic)),
+                Mb.Item("Underline", () => ToggleDecoration(TextDecorationLocation.Underline), "⌘U", isChecked: SelectionHas(TextDecorationLocation.Underline)),
+                Mb.Item("Strikethrough", () => ToggleDecoration(TextDecorationLocation.Strikethrough), "⇧⌘X", isChecked: SelectionHas(TextDecorationLocation.Strikethrough))));
+            Mb.Add(cm.Items, Mb.Sub("Spelling and Grammar",
+                Mb.Item("Check Spelling While Typing", () => SpellCheck.SetIsEnabled(this, !SpellCheck.GetIsEnabled(this)), isChecked: SpellCheck.GetIsEnabled(this))));
+            Mb.Add(cm.Items, Mb.Sub("Transformations",
+                Mb.Item("Make Upper Case", () => Transform(s => s.ToUpper(System.Globalization.CultureInfo.CurrentCulture)), enabled: sel),
+                Mb.Item("Make Lower Case", () => Transform(s => s.ToLower(System.Globalization.CultureInfo.CurrentCulture)), enabled: sel),
+                Mb.Item("Capitalize", () => Transform(s => System.Globalization.CultureInfo.CurrentCulture.TextInfo.ToTitleCase(s.ToLower(System.Globalization.CultureInfo.CurrentCulture))), enabled: sel)));
+        }
+        string speak = sel ? Selection.Text : new TextRange(Document.ContentStart, Document.ContentEnd).Text;
+        Mb.Add(cm.Items, Mb.Sub("Speech",
+            Mb.Item("Start Speaking", () => Speak(speak)),
+            Mb.Item("Stop Speaking", () => Speak(null))));
+        if (cm.Items.Count > 0 && cm.Items[^1] is Separator s2) cm.Items.Remove(s2);
+    }
+
+    static string WordAt(TextPointer p)
+    {
+        if (p == null) return null;
+        string before = p.GetTextInRun(LogicalDirection.Backward), after = p.GetTextInRun(LogicalDirection.Forward);
+        var b = System.Text.RegularExpressions.Regex.Match(before ?? "", @"[\w'-]*$").Value;
+        var a = System.Text.RegularExpressions.Regex.Match(after ?? "", @"^[\w'-]*").Value;
+        string w = (b + a).Trim('\'', '-');
+        return w.Length == 0 ? null : w;
+    }
+
+    void Transform(Func<string, string> f)
+    {
+        if (Selection.IsEmpty) return;
+        Selection.Text = f(Selection.Text);
+        Edited?.Invoke();
+    }
+
+    void RemoveLink(Hyperlink h)
+    {
+        if (h.Parent is not Paragraph and not Span) return;
+        var start = h.ContentStart;
+        var text = new TextRange(h.ContentStart, h.ContentEnd).Text;
+        var r = new Run(text);
+        if (h.Parent is Paragraph pp) { pp.Inlines.InsertBefore(h, r); pp.Inlines.Remove(h); }
+        else if (h.Parent is Span sp) { sp.Inlines.InsertBefore(h, r); sp.Inlines.Remove(h); }
+        Edited?.Invoke();
+    }
+
+    /// <summary>Speech › Start Speaking: Windows' own voice reads it (Stop Speaking: quiet).</summary>
+    static void Speak(string text)
+    {
+        try
+        {
+            _voice ??= Activator.CreateInstance(Type.GetTypeFromProgID("SAPI.SpVoice"));
+            _voice.Speak(string.IsNullOrWhiteSpace(text) ? "" : text, text == null ? 2 /*purge*/ : 1 | 2 /*async, purge what was being said*/);
+        }
+        catch (Exception ex) { App.Log("notes speech: " + ex.Message); }
     }
 
     // ------------------------------------------------------------------ typing
@@ -291,6 +486,8 @@ public sealed class NoteEditor : RichTextBox
 
     void Enter(Paragraph p, string kind)
     {
+        LinkWordBeforeCaret();
+        p = CaretPosition.Paragraph ?? p;
         // an empty list item: Return ends the list (as on a Mac)
         if (kind != null && !HasText(p))
         {
@@ -327,6 +524,7 @@ public sealed class NoteEditor : RichTextBox
     /// <summary>"- ", "* " or "1. " typed at the start of a line begins a list (as in Notes).</summary>
     void OnTextInput(object sender, TextCompositionEventArgs e)
     {
+        if (e.Text is " " or "\t") LinkWordBeforeCaret();
         if (e.Text != " ") return;
         var p = CaretPosition.Paragraph;
         if (p == null || NoteFlow.ListOf(p) != null) return;
@@ -418,6 +616,15 @@ public sealed class NoteEditor : RichTextBox
             }
             if (data.GetDataPresent(DataFormats.Rtf) || data.GetDataPresent(DataFormats.Xaml))
                 Dispatcher.BeginInvoke(Tidy, System.Windows.Threading.DispatcherPriority.Background);   // (pasted styles become the note's own)
+            else
+                Dispatcher.BeginInvoke(() =>
+                {
+                    // web addresses in pasted text become links
+                    int caret = Document.ContentStart.GetOffsetToPosition(CaretPosition);
+                    BeginChange();
+                    try { AutoLinkAll(); } finally { EndChange(); }
+                    if (Document.ContentStart.GetPositionAtOffset(caret) is { } back) CaretPosition = back;
+                }, System.Windows.Threading.DispatcherPriority.Background);
         }
         catch (Exception ex) { App.Log("notes paste: " + ex.Message); }
     }
@@ -447,6 +654,7 @@ public sealed class NoteEditor : RichTextBox
         try
         {
             Document = NoteFlow.ToFlow(doc, Note);
+            AutoLinkAll();
             var pos = Document.ContentStart.GetPositionAtOffset(Math.Min(caret, Document.ContentStart.GetOffsetToPosition(Document.ContentEnd)));
             if (pos != null) CaretPosition = pos.GetInsertionPosition(LogicalDirection.Forward);
         }

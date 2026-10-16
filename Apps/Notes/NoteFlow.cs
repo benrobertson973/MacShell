@@ -40,8 +40,17 @@ public static class NoteFlow
         p.FontSize = size;
         p.FontWeight = weight;
         p.FontFamily = mono ? Theme.MonoFont : Theme.Font;
-        double after = style is "title" ? 6 : style is "heading" or "subheading" ? 4 : 2;
+        // (as in Notes, Return goes straight to the next line: no space between paragraphs, a little under a title)
+        double after = style is "title" ? 3 : style is "heading" or "subheading" ? 1 : 0;
         p.Margin = new Thickness(p.Margin.Left, 0, 0, after);
+    }
+
+    /// <summary>Paragraphs made by typing or pasting get no space around them either.</summary>
+    static Style TightParagraphs()
+    {
+        var s = new Style(typeof(Paragraph));
+        s.Setters.Add(new Setter(Block.MarginProperty, new Thickness(0)));
+        return s;
     }
 
     // ------------------------------------------------------------------ NoteDoc → FlowDocument
@@ -49,6 +58,7 @@ public static class NoteFlow
     public static FlowDocument ToFlow(NoteDoc doc, NoteInfo note)
     {
         var fd = new FlowDocument { PagePadding = new Thickness(0), FontFamily = Theme.Font, FontSize = 13.5, TextAlignment = TextAlignment.Left };
+        fd.Resources[typeof(Paragraph)] = TightParagraphs();
         fd.SetResourceReference(FlowDocument.ForegroundProperty, "LabelBrush");
         foreach (var b in doc.Blocks)
         {

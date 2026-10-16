@@ -51,7 +51,10 @@ public static class NotesTransfer
             Title = "Import to Notes";
             Topmost = owner?.Topmost ?? false;
             if (owner != null && owner.IsVisible) { Owner = owner; WindowStartupLocation = WindowStartupLocation.CenterOwner; } else CenterOnScreen(0.2);
-            var sp = new StackPanel { Width = 470, Margin = new Thickness(22, 20, 22, 16) };
+            var sp = new StackPanel { Width = 470, Margin = new Thickness(22, 14, 22, 16) };
+            var lights = new TrafficLights { CanMinimize = false, CanZoom = false, Margin = new Thickness(-8, 0, 0, 10) };
+            lights.CloseRequested += () => { if (!_busy) Close(); };
+            sp.Children.Add(lights);
 
             var head = new Grid { Margin = new Thickness(0, 0, 0, 14) };
             head.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });

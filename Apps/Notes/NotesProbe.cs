@@ -86,6 +86,13 @@ public static class NotesProbe
         log.AppendLine($"html+md: {r2.Notes} imported, problems: {string.Join("; ", r2.Problems)}");
         foreach (var n in NotesLibrary.Notes.Where(n => n.Title is "Trip" or "Plan")) log.AppendLine($"{n.Title}: " + Describe(NotesLibrary.LoadDoc(n)));
 
+        // web addresses written as plain text become links when the note opens
+        var linky = NotesLibrary.Create(NotesLibrary.DefaultFolder, NoteDoc.FromText("Links\nJaden 20 minutes\nhttps://www.slw-ele.com/m270htn01-1.html\nSee apple.com, or write to me@example.com."));
+        w.Reload();
+        typeof(NotesWindow).GetMethod("Select", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.Invoke(w, new object[] { linky });
+        Pump(300);
+        log.AppendLine("autolink: " + Describe(editor.Read()) + " | links: " + string.Join(", ", editor.Read().Blocks.SelectMany(b => b.Runs).Where(r => r.Link != null).Select(r => r.Link)));
+
         // the Apple Notes body decoder, on a body made here the way a Mac stores one
         log.AppendLine("apple: " + AppleProbe());
 
