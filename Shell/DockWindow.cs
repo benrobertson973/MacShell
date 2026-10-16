@@ -153,6 +153,17 @@ public class DockWindow : Window
                 Settings.Current.DockApps.Insert(Math.Min(1, Settings.Current.DockApps.Count), new PinnedApp { Name = "Mail", Target = Apps.Mail.MailWindow.AppId });
             Settings.Save(false);
         }
+        // Notes too, once (after Mail)
+        if (!Settings.Current.NotesPinned && Settings.Current.DockApps != null)
+        {
+            Settings.Current.NotesPinned = true;
+            if (Settings.Current.DockApps.All(p => p.Target != Apps.Notes.NotesWindow.AppId))
+            {
+                int mail = Settings.Current.DockApps.FindIndex(p => p.Target == Apps.Mail.MailWindow.AppId);
+                Settings.Current.DockApps.Insert(mail >= 0 ? mail + 1 : Math.Min(2, Settings.Current.DockApps.Count), new PinnedApp { Name = "Notes", Target = Apps.Notes.NotesWindow.AppId });
+            }
+            Settings.Save(false);
+        }
         if (Settings.Current.DockApps != null || !AppCatalog.IsLoaded) return;
         var pins = new List<PinnedApp>();
         void Add(AppEntry e) { if (e != null && pins.All(p => p.Target != e.ParsingName)) pins.Add(new PinnedApp { Name = e.Name, Target = e.ParsingName, ExePath = e.TargetPath }); }
@@ -245,6 +256,8 @@ public class DockWindow : Window
         if (target == "internal:settings") { item.Icon = MacIcons.SystemSettings; item.IconIsVector = true; item.Name = "System Settings"; return item; }
         if (target == Apps.Preview.PreviewWindow.AppId) { item.Icon = MacIcons.Preview; item.IconIsVector = true; item.Name = "Preview"; return item; }
         if (target == Apps.Mail.MailWindow.AppId) { item.Icon = MacIcons.Mail; item.IconIsVector = true; item.Name = "Mail"; return item; }
+        if (target == Apps.Notes.NotesWindow.AppId) { item.Icon = MacIcons.Notes; item.IconIsVector = true; item.Name = "Notes"; return item; }
+        if (target == Apps.QuickTime.QuickTimeWindow.AppId) { item.Icon = MacIcons.QuickTime; item.IconIsVector = true; item.Name = "QuickTime Player"; return item; }
         item.Icon = MacIcons.GenericApp;
         item.IconIsVector = true;
         EnsureIcon(item, iconSource);
@@ -938,6 +951,9 @@ public class DockWindow : Window
                 case "finder": foreach (var f in files) ShellHost.RevealInFinder(f); break;
                 case "app" when hit.Target == Apps.Preview.PreviewWindow.AppId:
                     foreach (var f in files.Where(Apps.Preview.PvFile.IsImage)) Apps.Preview.PreviewWindow.Open(f);
+                    break;
+                case "app" when hit.Target == Apps.QuickTime.QuickTimeWindow.AppId:
+                    foreach (var f in files.Where(Apps.QuickTime.QuickTimeWindow.IsPlayable)) Apps.QuickTime.QuickTimeWindow.Open(f);
                     break;
                 case "app":
                     AppCatalog.OpenFilesWith(new AppEntryOrTarget(hit.Target, hit.ExePath ?? AppCatalog.FindByParsingName(hit.Target)?.TargetPath ?? hit.Running?.ExePath), files);

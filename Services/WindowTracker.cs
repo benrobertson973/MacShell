@@ -191,7 +191,7 @@ public static class WindowTracker
     public static RunningApp MakeInternalApp(string key) => new()
     {
         Key = key,
-        Name = key switch { "internal:settings" => "System Settings", "internal:preview" => "Preview", "internal:mail" => "Mail", _ => "Finder" },
+        Name = key switch { "internal:settings" => "System Settings", "internal:preview" => "Preview", "internal:mail" => "Mail", "internal:notes" => "Notes", "internal:quicktime" => "QuickTime Player", _ => "Finder" },
         IsInternal = true,
         LaunchTarget = key,
     };

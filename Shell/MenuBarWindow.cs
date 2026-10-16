@@ -143,9 +143,24 @@ public class MenuBarWindow : Window
 
     // ------------------------------------------------------------------ status items
 
+    /// <summary>A screen recording is going on: its stop button, first of the status items (as macOS shows it).</summary>
+    public void SetRecording(bool on)
+    {
+        if (_recordButton != null) _recordButton.Visibility = on ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    StatusButton _recordButton;
+
     void BuildStatusItems()
     {
         _right.Children.Clear();
+        var stop = new SymbolIcon { Symbol = "stop.circle", Width = 16, Height = 16, StrokeWidth = 1.7, Foreground = _text };
+        _recordButton = new StatusButton(stop, _ => Apps.QuickTime.ScreenRecorder.Stop())
+        {
+            ToolTip = "Stop Screen Recording",
+            Visibility = Apps.QuickTime.ScreenRecorder.Recording ? Visibility.Visible : Visibility.Collapsed,
+        };
+        _right.Children.Add(_recordButton);
         // the weather: the sky and the temperature (°F); a click: the forecast
         _weatherIcon = new SymbolIcon { Symbol = "cloud", Width = 17, Height = 17, StrokeWidth = 1.8, Foreground = _text, VerticalAlignment = VerticalAlignment.Center };
         _weatherText.Foreground = _text;
@@ -563,7 +578,47 @@ public class MenuBarWindow : Window
         else if (app.Key == "internal:settings") AddSettingsMenus();
         else if (app.Key == Apps.Preview.PreviewWindow.AppId) AddPreviewMenus();
         else if (app.Key == Apps.Mail.MailWindow.AppId) AddMailMenus();
+        else if (app.Key == Apps.Notes.NotesWindow.AppId) AddNotesMenus();
+        else if (app.Key == Apps.QuickTime.QuickTimeWindow.AppId) AddQuickTimeMenus();
         else AddAppMenus(app);
+    }
+
+    void AddQuickTimeMenus()
+    {
+        _menu.Items.Add(TopMenu("QuickTime Player", true, Apps.QuickTime.QuickTimeWindow.MenuApp()));
+        _menu.Items.Add(LiveMenu("File", Apps.QuickTime.QuickTimeWindow.MenuFile));
+        _menu.Items.Add(LiveMenu("Edit", Apps.QuickTime.QuickTimeWindow.MenuEdit));
+        _menu.Items.Add(LiveMenu("View", Apps.QuickTime.QuickTimeWindow.MenuView));
+        // (the Window menu, rebuilt as it opens, gets QuickTime's own items before Bring All to Front)
+        var window = WindowMenu(WindowTracker.FindByKey(Apps.QuickTime.QuickTimeWindow.AppId));
+        window.SubmenuOpened += (_, e) =>
+        {
+            if (e.OriginalSource != window) return;
+            var extras = new MenuItem();
+            foreach (var x in Apps.QuickTime.QuickTimeWindow.MenuWindowExtras()) Mb.Add(extras.Items, x);
+            int at = Math.Min(window.Items.Count, 5);   // (after Minimize, Zoom, Fill, Center, Move & Resize)
+            foreach (var x in extras.Items.Cast<object>().ToList()) { extras.Items.Remove(x); window.Items.Insert(at++, x); }
+        };
+        _menu.Items.Add(window);
+        _menu.Items.Add(HelpMenu("QuickTime Player"));
+    }
+
+    void AddNotesMenus()
+    {
+        _menu.Items.Add(TopMenu("Notes", true, Apps.Notes.NotesWindow.MenuNotes()));
+        _menu.Items.Add(LiveMenu("File", Apps.Notes.NotesWindow.MenuFile));
+        _menu.Items.Add(TopMenu("Edit", false,
+            Mb.Item("Undo", () => ApplicationCommands.Undo.Execute(null, Keyboard.FocusedElement), "⌘Z"),
+            Mb.Item("Redo", () => ApplicationCommands.Redo.Execute(null, Keyboard.FocusedElement), "⇧⌘Z"),
+            Mb.Sep(),
+            Mb.Item("Cut", () => ApplicationCommands.Cut.Execute(null, Keyboard.FocusedElement), "⌘X"),
+            Mb.Item("Copy", () => ApplicationCommands.Copy.Execute(null, Keyboard.FocusedElement), "⌘C"),
+            Mb.Item("Paste", () => ApplicationCommands.Paste.Execute(null, Keyboard.FocusedElement), "⌘V"),
+            Mb.Item("Select All", () => ApplicationCommands.SelectAll.Execute(null, Keyboard.FocusedElement), "⌘A")));
+        _menu.Items.Add(LiveMenu("Format", Apps.Notes.NotesWindow.MenuFormat));
+        _menu.Items.Add(LiveMenu("View", Apps.Notes.NotesWindow.MenuView));
+        _menu.Items.Add(WindowMenu(WindowTracker.FindByKey(Apps.Notes.NotesWindow.AppId)));
+        _menu.Items.Add(HelpMenu("Notes"));
     }
 
     void AddMailMenus()

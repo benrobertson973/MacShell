@@ -23,15 +23,23 @@ public sealed class OwApp
 
 /// <summary>
 /// Open With, like macOS: the apps that can open a document (Windows' registered handlers, plus MacShell's own
-/// Preview for pictures), opening a document with any of them, and MacShell's own defaults — per document (Get Info)
-/// or for every document of a kind ("Change All…", "Always Open With"). Windows doesn't let programs change its own
-/// defaults, so these apply to everything opened through MacShell (Finder, the desktop, Spotlight, the Dock …).
+/// Preview for pictures and QuickTime Player for movies), opening a document with any of them, and MacShell's own
+/// defaults — per document (Get Info) or for every document of a kind ("Change All…", "Always Open With"). Windows
+/// doesn't let programs change its own defaults, so these apply to everything opened through MacShell (Finder, the
+/// desktop, Spotlight, the Dock …).
 /// </summary>
 public static class OpenWith
 {
     public const string PreviewKey = "internal:preview";
+    public const string QuickTimeKey = Apps.QuickTime.QuickTimeWindow.AppId;
 
     static string Ext(string path) => Path.GetExtension(path ?? "").ToLowerInvariant();
+
+    /// <summary>MacShell's own app for this kind of document, as on a Mac: Preview for pictures, QuickTime Player for movies.</summary>
+    static OwApp BuiltInFor(string path) =>
+        Apps.Preview.PvFile.IsImage(path) ? PreviewApp : Apps.QuickTime.QuickTimeWindow.IsMovie(path) ? QuickTimeApp : null;
+
+    static bool IsBuiltIn(string key) => key == PreviewKey || key == QuickTimeKey;
 
     // ------------------------------------------------------------------ the apps that can open a kind of document
 
@@ -98,11 +106,13 @@ public static class OpenWith
         return list;
     }
 
-    /// <summary>Recommended apps first (then the rest), Preview included for pictures; no duplicates.</summary>
+    /// <summary>Recommended apps first (then the rest), Preview included for pictures, QuickTime Player for movies and
+    /// sound; no duplicates.</summary>
     public static List<OwApp> AppsFor(string path, bool recommendedOnly)
     {
         var apps = new List<OwApp>();
         if (Apps.Preview.PvFile.IsImage(path)) apps.Add(PreviewApp);
+        if (Apps.QuickTime.QuickTimeWindow.IsPlayable(path)) apps.Add(QuickTimeApp);
         apps.AddRange(PackagedFor(Ext(path)));
         foreach (var h in Handlers(Ext(path)))
             if (!recommendedOnly || h.App.Recommended) apps.Add(h.App);
@@ -111,6 +121,7 @@ public static class OpenWith
     }
 
     public static readonly OwApp PreviewApp = new() { Key = PreviewKey, Name = "Preview", Recommended = true };
+    public static readonly OwApp QuickTimeApp = new() { Key = QuickTimeKey, Name = "QuickTime Player", Recommended = true };
 
     /// <summary>Windows' own default for this kind of document (its name), or null.</summary>
     public static string WindowsDefaultName(string ext)
@@ -131,7 +142,7 @@ public static class OpenWith
     {
         string name = WindowsDefaultName(Ext(path));
         if (name == null) return null;
-        var h = AppsFor(path, false).FirstOrDefault(x => x.Key != PreviewKey && string.Equals(x.Name, name, StringComparison.OrdinalIgnoreCase));
+        var h = AppsFor(path, false).FirstOrDefault(x => !IsBuiltIn(x.Key) && string.Equals(x.Name, name, StringComparison.OrdinalIgnoreCase));
         return h ?? new OwApp { Key = "windows", Name = name };
     }
 
@@ -142,18 +153,17 @@ public static class OpenWith
 
     static string FileKey(string path) => ByFile.Keys.FirstOrDefault(k => string.Equals(k, path, StringComparison.OrdinalIgnoreCase));
 
-    /// <summary>The app this document opens with in MacShell: its own choice (Get Info), its kind's, Preview for pictures, else Windows'.</summary>
+    /// <summary>The app this document opens with in MacShell: its own choice (Get Info), its kind's, Preview for pictures
+    /// and QuickTime Player for movies, else Windows'.</summary>
     public static OwApp DefaultFor(string path)
     {
         string fk = FileKey(path);
         if (fk != null && Resolve(ByFile[fk], path) is { } f) return f;
-        if (ByKind.TryGetValue(Ext(path), out var k) && Resolve(k, path) is { } d) return d;
-        if (Apps.Preview.PvFile.IsImage(path)) return PreviewApp;
-        return WindowsDefault(path);
+        return DefaultForKindOnly(path);
     }
 
     /// <summary>Whether MacShell (rather than Windows) decides how this document opens.</summary>
-    public static bool HasMacShellDefault(string path) => FileKey(path) != null || ByKind.ContainsKey(Ext(path)) || Apps.Preview.PvFile.IsImage(path);
+    public static bool HasMacShellDefault(string path) => FileKey(path) != null || ByKind.ContainsKey(Ext(path)) || BuiltInFor(path) != null;
 
     public static void SetDefaultForKind(string path, OwApp app)
     {
@@ -175,13 +185,13 @@ public static class OpenWith
     static OwApp DefaultForKindOnly(string path)
     {
         if (ByKind.TryGetValue(Ext(path), out var k) && Resolve(k, path) is { } d) return d;
-        if (Apps.Preview.PvFile.IsImage(path)) return PreviewApp;
-        return WindowsDefault(path);
+        return BuiltInFor(path) ?? WindowsDefault(path);
     }
 
     static OwApp Resolve(string key, string path)
     {
         if (key == PreviewKey) return PreviewApp;
+        if (key == QuickTimeKey) return QuickTimeApp;
         if (key == "windows") return WindowsDefault(path);
         if (key.StartsWith("assoc:")) return Handlers(Ext(path)).FirstOrDefault(h => h.App.Key == key)?.App;
         if (key.StartsWith("app:"))
@@ -210,6 +220,7 @@ public static class OpenWith
         {
             string key = app.Key;
             if (key == PreviewKey) { Apps.Preview.PreviewWindow.Open(path); return true; }
+            if (key == QuickTimeKey) { Apps.QuickTime.QuickTimeWindow.Open(path); return true; }
             if (key == "windows") { Process.Start(new ProcessStartInfo(path) { UseShellExecute = true, WorkingDirectory = Path.GetDirectoryName(path) ?? "" }); return Done(path); }
             if (key.StartsWith("assoc:"))
             {

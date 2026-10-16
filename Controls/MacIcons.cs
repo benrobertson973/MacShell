@@ -145,12 +145,46 @@ public static class MacIcons
         return Freeze(dg);
     });
 
+    // ------------------------------------------------------------------ Notes: a white pad with a yellow top and ruled lines
+    public static ImageSource Notes => Cached("notes", () =>
+    {
+        var dg = new DrawingGroup();
+        AppBase(dg, Solid("#FFFFFF"));
+        var clip = new DrawingGroup { ClipGeometry = AppShape };
+        clip.Children.Add(new GeometryDrawing(VGrad("#FFFFFF", "#F4F4F4"), null, new RectangleGeometry(new Rect(0, 0, 100, 100))));
+        clip.Children.Add(new GeometryDrawing(VGrad("#FFD95A", "#F7C531"), null, new RectangleGeometry(new Rect(0, 0, 100, 29))));
+        clip.Children.Add(new GeometryDrawing(new SolidColorBrush(Color.FromArgb(40, 0, 0, 0)), null, new RectangleGeometry(new Rect(0, 29, 100, 1.2))));
+        // the perforation under the yellow band
+        for (double x = 13; x < 90; x += 6.2) clip.Children.Add(new GeometryDrawing(Solid("#D9D9D9"), null, new EllipseGeometry(new Point(x, 33.6), 1.15, 1.15)));
+        var line = new Pen(Solid("#DCDCE0"), 1.3);
+        for (double y = 47; y < 92; y += 10.5) clip.Children.Add(new GeometryDrawing(null, line, new LineGeometry(new Point(13, y), new Point(87, y))));
+        dg.Children.Add(clip);
+        dg.Children.Add(new GeometryDrawing(null, new Pen(new SolidColorBrush(Color.FromArgb(30, 0, 0, 0)), 0.6), AppShape));
+        return Freeze(dg);
+    });
+
+    // ------------------------------------------------------------------ QuickTime Player: a dark round "Q" lens
+    public static ImageSource QuickTime => Cached("quicktime", () =>
+    {
+        var dg = new DrawingGroup();
+        dg.Children.Add(new GeometryDrawing(new SolidColorBrush(Color.FromArgb(46, 0, 0, 0)), null, new EllipseGeometry(new Point(50, 52.5), 43, 43)));
+        dg.Children.Add(new GeometryDrawing(VGrad("#5B5B60", "#1E1E21"), null, new EllipseGeometry(new Point(50, 50), 43, 43)));
+        dg.Children.Add(new GeometryDrawing(VGrad("#2A2A2E", "#0C0C0E"), null, new EllipseGeometry(new Point(50, 50), 37, 37)));
+        var ring = new Pen(new LinearGradientBrush(C("#9EDBFF"), C("#2C7DF0"), 45), 9) { StartLineCap = PenLineCap.Round, EndLineCap = PenLineCap.Round };
+        dg.Children.Add(new GeometryDrawing(null, ring, new EllipseGeometry(new Point(48, 48), 19, 19)));
+        dg.Children.Add(new GeometryDrawing(null, ring, G("M60,60 L71,71")));
+        dg.Children.Add(new GeometryDrawing(new SolidColorBrush(Color.FromArgb(70, 255, 255, 255)), null, G("M20,38 C26,20 46,12 64,17 C50,16 32,24 20,38 Z")));
+        return Freeze(dg);
+    });
+
     /// <summary>The icon of one of MacShell's own apps (internal:*).</summary>
     public static ImageSource ForInternal(string key) => key switch
     {
         "internal:settings" => SystemSettings,
         "internal:preview" => Preview,
         "internal:mail" => Mail,
+        "internal:notes" => Notes,
+        "internal:quicktime" => QuickTime,
         _ => Finder,
     };
 
