@@ -571,6 +571,41 @@
         </Setter>
     </Style>
 
+    <Style x:Key="MacPasswordField" TargetType="PasswordBox">
+        <Setter Property="OverridesDefaultStyle" Value="True"/>
+        <Setter Property="FontFamily" Value="{DynamicResource MacFont}"/>
+        <Setter Property="FontSize" Value="13"/>
+        <Setter Property="Foreground" Value="{DynamicResource LabelBrush}"/>
+        <Setter Property="CaretBrush" Value="{DynamicResource LabelBrush}"/>
+        <Setter Property="SelectionBrush" Value="{DynamicResource AccentBrush}"/>
+        <Setter Property="SelectionOpacity" Value="0.35"/>
+        <Setter Property="Height" Value="22"/>
+        <Setter Property="Padding" Value="4,0"/>
+        <Setter Property="VerticalContentAlignment" Value="Center"/>
+        <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="PasswordBox">
+                    <Grid>
+                        <Border x:Name="ring" Margin="-3" CornerRadius="7.5" BorderThickness="3.5" BorderBrush="{DynamicResource FocusRingBrush}" Visibility="Collapsed"/>
+                        <Border x:Name="bd" CornerRadius="5" Background="{DynamicResource TextFieldBrush}" BorderBrush="{DynamicResource ControlBorderBrush}" BorderThickness="0.5">
+                            <ScrollViewer x:Name="PART_ContentHost" Margin="{TemplateBinding Padding}" VerticalAlignment="Center" Focusable="False"
+                                          HorizontalScrollBarVisibility="Hidden" VerticalScrollBarVisibility="Hidden"/>
+                        </Border>
+                    </Grid>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsKeyboardFocused" Value="True">
+                            <Setter TargetName="ring" Property="Visibility" Value="Visible"/>
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter TargetName="bd" Property="Opacity" Value="0.5"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
     <Style x:Key="MacSearchField" TargetType="TextBox" BasedOn="{StaticResource MacTextField}">
         <Setter Property="Height" Value="28"/>
         <Setter Property="Padding" Value="26,0,24,0"/>

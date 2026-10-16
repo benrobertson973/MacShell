@@ -35,6 +35,29 @@ public partial class SettingsWindow
         _ = AppCatalog.LoadAsync();
         Pump(() => catalog, 15000);
 
+        if (only == "wifimenu")
+        {
+            // the menu bar's Wi-Fi menu (folded and unfolded) and the password windows, off-screen; nothing is joined
+            string sfx = dark ? "-dark" : "";
+            Shell.WifiPopover.Toggle(null);
+            Pump(() => false, 3000);
+            if (Shell.WifiPopover.Current is { } pop)
+            {
+                Render(pop, Path.Combine(dir, "wifimenu" + sfx + ".png"));
+                pop.TestExpand();
+                Pump(() => false, 300);
+                Render(pop, Path.Combine(dir, "wifimenu-others" + sfx + ".png"));
+                pop.Close();
+            }
+            Shell.WifiJoinDialog.ShowForTest("Coffee Shop");
+            Pump(() => false, 400);
+            if (Shell.WifiJoinDialog.Current is { } jd) { Render(jd, Path.Combine(dir, "wifijoin" + sfx + ".png")); jd.Close(); }
+            Shell.WifiJoinDialog.ShowHidden();
+            Pump(() => false, 400);
+            if (Shell.WifiJoinDialog.Current is { } hd) { Render(hd, Path.Combine(dir, "wifiother" + sfx + ".png")); hd.Close(); }
+            return;
+        }
+
         var w = new SettingsWindow { ShowInTaskbar = false, ShowActivated = false, Left = -20000, Top = -20000 };
         w.SourceInitialized += (_, _) => Native.NativeMethods.AddExStyle(new WindowInteropHelper(w).Handle, Native.NativeMethods.WS_EX_TOOLWINDOW);
         w.Show();

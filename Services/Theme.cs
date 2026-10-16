@@ -71,6 +71,8 @@ public static class Theme
         r["SelectionBrush"] = B(SelectionColor);
         r["SelectionTextBrush"] = B("#FFFFFF");
         r["TextSelectionBrush"] = B(IsDark ? "#3F638B" : "#B3D7FF");
+        r["SystemRedBrush"] = B(IsDark ? "#FF453A" : "#FF3B30");
+        r["SystemGreenBrush"] = B(IsDark ? "#30D158" : "#34C759");
 
         if (!IsDark)
         {

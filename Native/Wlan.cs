@@ -27,8 +27,9 @@ public static class Wlan
     [DllImport("wlanapi.dll")] static extern int WlanDisconnect(IntPtr handle, ref Guid iface, IntPtr reserved);
 
     public record Adapter(Guid Id, string Description, int State);
-    /// <summary>A network around. Signal 0-100; Security as Windows names it ("WPA2-Personal"); Band "2.4 GHz" / "5 GHz" / "6 GHz".</summary>
-    public record Network(string Ssid, string Profile, int Signal, bool Secure, string Security, int Auth, bool Connected, bool Known, string Band);
+    /// <summary>A network around. Signal 0-100; Security as Windows names it ("WPA2-Personal"); Band "2.4 GHz" / "5 GHz" / "6 GHz";
+    /// Cipher the DOT11_CIPHER_ALGORITHM it uses (2 TKIP, 4 AES).</summary>
+    public record Network(string Ssid, string Profile, int Signal, bool Secure, string Security, int Auth, bool Connected, bool Known, string Band, int Cipher = 4);
     public record Connection(string Ssid, string Profile, int Signal, string Bssid, string Phy, double RxMbps, double TxMbps, string Security, string Band, int Channel);
     public record KnownNetwork(string Name, bool AutoJoin, bool PerUser);
 
@@ -176,9 +177,10 @@ public static class Wlan
                     int signal = Marshal.ReadInt32(e + 604);
                     bool secure = Marshal.ReadInt32(e + 608) != 0;
                     int auth = Marshal.ReadInt32(e + 612);
+                    int cipher = Marshal.ReadInt32(e + 616);
                     int flags = Marshal.ReadInt32(e + 620);
                     bands.TryGetValue(ssid, out uint freq);
-                    raw.Add(new Network(ssid, profile, signal, secure, secure ? SecurityName(auth) : "None", auth, (flags & 1) != 0, (flags & 2) != 0 || profile.Length > 0, Band(freq)));
+                    raw.Add(new Network(ssid, profile, signal, secure, secure ? SecurityName(auth) : "None", auth, (flags & 1) != 0, (flags & 2) != 0 || profile.Length > 0, Band(freq), cipher));
                 }
             }
             finally { WlanFreeMemory(p); }
@@ -261,16 +263,48 @@ public static class Wlan
         return WithHandle(h => { var id = a.Id; return WlanDeleteProfile(h, ref id, profile, IntPtr.Zero); }, -1);
     }
 
-    /// <summary>Remembers a network (a new profile, its password included) so it can be joined.</summary>
-    public static int AddProfile(string ssid, int auth, string password, bool autoJoin, out int reason)
+    /// <summary>Remembers a network (a new profile, its password included) so it can be joined. <paramref name="hidden"/>:
+    /// it doesn't say its name, so it's looked for by name.</summary>
+    public static int AddProfile(string ssid, int auth, string password, bool autoJoin, out int reason, int cipher = 4, bool hidden = false)
     {
         int r = 0;
         var a = Primary;
         if (a == null) { reason = 0; return -1; }
-        string xml = MakeProfileXml(ssid, auth, password, autoJoin);
+        string xml = MakeProfileXml(ssid, auth, password, autoJoin, cipher, hidden);
         int result = WithHandle(h => { var id = a.Id; return WlanSetProfile(h, ref id, 0, xml, null, true, IntPtr.Zero, out r); }, -1);
         reason = r;
         return result;
+    }
+
+    /// <summary>The ways of joining MacShell does itself: none, WPA/WPA2/WPA3 Personal, Enhanced Open (not WEP or
+    /// Enterprise: Windows' own network list asks for those).</summary>
+    public static bool CanJoinHere(int auth) => auth is 1 or 4 or 7 or 9 or 10;
+
+    /// <summary>
+    /// Joins a network: a known one by its profile; a new one gets a profile (the password in it) first. Waits up to
+    /// 20 s for it to be joined; a new profile that couldn't join is taken away again. Null when joined, else what went wrong.
+    /// </summary>
+    public static string Join(string ssid, int auth, int cipher, string password, bool remember, bool hidden, string knownProfile)
+    {
+        bool added = false;
+        string profile = knownProfile;
+        if (string.IsNullOrEmpty(profile))
+        {
+            int r = AddProfile(ssid, auth, password, remember, out int reason, cipher, hidden);
+            if (r != 0) return reason != 0 ? $"Windows didn’t accept the network’s settings (reason {reason})." : $"Windows didn’t accept the network’s settings (0x{r:X}).";
+            added = true;
+            profile = ssid;
+        }
+        int c = Connect(profile);
+        if (c != 0) { if (added) Forget(profile); return $"The network couldn’t be joined (0x{c:X})."; }
+        for (int i = 0; i < 40; i++)
+        {
+            Thread.Sleep(500);
+            var now = Current();
+            if (now != null && (now.Ssid == ssid || now.Profile == profile)) return null;
+        }
+        if (added) Forget(profile);
+        return NeedsPassword(auth) ? "Check the password and try again." : "The network didn’t answer.";
     }
 
     /// <summary>Switches a known network's automatic joining.</summary>
@@ -290,22 +324,23 @@ public static class Wlan
         }, -1);
     }
 
-    static string MakeProfileXml(string ssid, int auth, string password, bool autoJoin)
+    static string MakeProfileXml(string ssid, int auth, string password, bool autoJoin, int cipher = 4, bool hidden = false)
     {
         string hex = string.Concat(Encoding.UTF8.GetBytes(ssid).Select(b => b.ToString("X2")));
         string name = SecurityElement.Escape(ssid);
+        string enc = cipher == 2 ? "TKIP" : "AES";
         (string a, string e) = auth switch
         {
             9 => ("WPA3SAE", "AES"),
-            7 => ("WPA2PSK", "AES"),
-            4 => ("WPAPSK", "AES"),
+            7 => ("WPA2PSK", enc),
+            4 => ("WPAPSK", enc),
             10 => ("OWE", "AES"),
             _ => ("open", "none"),
         };
         string key = password == null || a is "open" or "OWE" ? "" :
             $"<sharedKey><keyType>passPhrase</keyType><protected>false</protected><keyMaterial>{SecurityElement.Escape(password)}</keyMaterial></sharedKey>";
         return "<?xml version=\"1.0\"?>\n<WLANProfile xmlns=\"http://www.microsoft.com/networking/WLAN/profile/v1\">" +
-               $"<name>{name}</name><SSIDConfig><SSID><hex>{hex}</hex><name>{name}</name></SSID></SSIDConfig>" +
+               $"<name>{name}</name><SSIDConfig><SSID><hex>{hex}</hex><name>{name}</name></SSID>{(hidden ? "<nonBroadcast>true</nonBroadcast>" : "")}</SSIDConfig>" +
                $"<connectionType>ESS</connectionType><connectionMode>{(autoJoin ? "auto" : "manual")}</connectionMode>" +
                $"<MSM><security><authEncryption><authentication>{a}</authentication><encryption>{e}</encryption><useOneX>false</useOneX></authEncryption>{key}</security></MSM>" +
                "</WLANProfile>";

@@ -4,11 +4,6 @@ namespace MacShell.Apps;
 public partial class SettingsWindow
 {
     static void NotYet() => throw new NotImplementedException("not written yet");
-    void BuildWifi() => NotYet();
-    void BuildWifiPage(string sub) => NotYet();
-    void BuildBluetooth() => NotYet();
-    void BuildNetwork() => NotYet();
-    void BuildNetworkPage(string sub) => NotYet();
     void BuildNotifications() => NotYet();
     void BuildNotificationApp(string sub) => NotYet();
     void BuildSound() => NotYet();

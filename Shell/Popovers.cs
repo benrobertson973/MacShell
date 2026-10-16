@@ -61,6 +61,7 @@ public class Popover : Window
         if (anchor != null) anchor.Active = true;
         Loaded += (_, _) =>
         {
+            if (ShellHost.Offscreen) { Left = -20000; Top = 100; return; }
             double screenRight = (ShellHost.ScreenPx.Left / ShellHost.Scale) + ShellHost.ScreenDip.Width;
             double right = anchor != null ? anchor.ScreenAnchor().X + 20 + 8 : screenRight - 4;
             if (alignRightEdge) right = Math.Min(right + 60, screenRight + 12);
@@ -137,8 +138,12 @@ public class ControlCenterWindow : Popover
         row1.ColumnDefinitions.Add(new ColumnDefinition());
         row1.ColumnDefinitions.Add(new ColumnDefinition());
         var conn = new StackPanel();
-        conn.Children.Add(Toggle("wifi", "Wi-Fi", WifiName(), true, () => OpenUri("ms-availablenetworks:")));
-        conn.Children.Add(Toggle("bluetooth", "Bluetooth", "On", true, () => OpenUri("ms-settings:bluetooth")));
+        // (the radios answer in a moment; Control Center doesn't wait more than a fraction of a second for them)
+        var radios = Task.Run(() => { var w = Wlan.RadioOn(); return (wifi: w, name: WifiName(w), bt: Radios.Get(Radios.Kind.Bluetooth)); });
+        (bool? wifi, string name, Radios.State? bt) state = radios.Wait(400) ? radios.Result : (true, "Wi-Fi", Radios.State.On);
+        var (wifiOn, wifiName, btOn) = state;
+        conn.Children.Add(Toggle("wifi", "Wi-Fi", wifiName, wifiOn == true, () => { Close(); Dispatcher.BeginInvoke(() => ShellHost.MenuBar?.ShowWifiMenu()); }));
+        conn.Children.Add(Toggle("bluetooth", "Bluetooth", btOn == null ? "Not Available" : btOn == Radios.State.On ? "On" : "Off", btOn == Radios.State.On, () => { Close(); SettingsWindow.ShowPane("bluetooth"); }));
         conn.Children.Add(Toggle("airdrop", "Nearby Share", "Settings", false, () => OpenUri("ms-settings:crossdevice")));
         row1.Children.Add(Module(conn, 8));
 
@@ -226,19 +231,11 @@ public class ControlCenterWindow : Popover
         PlaceUnder(anchor);
     }
 
-    static string WifiName()
+    static string WifiName(bool? radioOn)
     {
-        try
-        {
-            var psi = new ProcessStartInfo("netsh", "wlan show interfaces") { RedirectStandardOutput = true, UseShellExecute = false, CreateNoWindow = true };
-            using var p = Process.Start(psi);
-            string o = p.StandardOutput.ReadToEnd();
-            p.WaitForExit(800);
-            var m = System.Text.RegularExpressions.Regex.Match(o, @"^\s*SSID\s*:\s*(.+)$", System.Text.RegularExpressions.RegexOptions.Multiline);
-            if (m.Success) return m.Groups[1].Value.Trim();
-        }
-        catch { }
-        return System.Net.NetworkInformation.NetworkInterface.GetIsNetworkAvailable() ? "Connected" : "Not Connected";
+        if (radioOn == null) return System.Net.NetworkInformation.NetworkInterface.GetIsNetworkAvailable() ? "Ethernet" : "Not Connected";
+        if (radioOn == false) return "Off";
+        return Wlan.Current()?.Ssid ?? "Not Connected";
     }
 
     static Border Circle(string sym, bool on, double size = 28)

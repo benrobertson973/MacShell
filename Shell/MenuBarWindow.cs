@@ -188,8 +188,13 @@ public class MenuBarWindow : Window
         _batteryButton = new StatusButton(bp, b => ControlCenterWindow.ShowBattery(b)) { HideKey = "battery", HideName = "Battery" };
         _right.Children.Add(_batteryButton);
 
-        _wifiIcon = new SymbolIcon { Symbol = "wifi", Width = 17, Height = 17, StrokeWidth = 2.0, Foreground = _text };
-        _wifiButton = new StatusButton(_wifiIcon, _ => OpenUri("ms-availablenetworks:")) { HideKey = "wifi", HideName = "Wi‑Fi" };
+        // Wi-Fi: the fan with its bars (Ethernet: the network symbol); a click: the Wi-Fi menu
+        _wifiIcon = new SymbolIcon { Symbol = "network", Width = 17, Height = 17, StrokeWidth = 2.0, Foreground = _text, Visibility = Visibility.Collapsed };
+        _wifiGlyph = new WifiGlyph { Width = 17, Height = 13, Foreground = _text, VerticalAlignment = VerticalAlignment.Center, Level = _wifiLevel };
+        var wifiBox = new Grid { VerticalAlignment = VerticalAlignment.Center };
+        wifiBox.Children.Add(_wifiGlyph);
+        wifiBox.Children.Add(_wifiIcon);
+        _wifiButton = new StatusButton(wifiBox, b => WifiPopover.Toggle(b)) { HideKey = "wifi", HideName = "Wi‑Fi" };
         _right.Children.Add(_wifiButton);
 
         _soundIcon = new SymbolIcon { Symbol = "speaker", Width = 17, Height = 17, StrokeWidth = 1.9, Foreground = _text };
@@ -556,9 +561,33 @@ public class MenuBarWindow : Window
             }
         }
         catch { }
-        _wifiIcon.Symbol = wifi || !anyUp ? "wifi" : "network";
-        _wifiIcon.Opacity = anyUp ? 1 : 0.35;
+        // Wi-Fi: the fan, its bars as strong as the signal (read off the UI thread); Ethernet: the network symbol
+        bool showFan = wifi || !anyUp;
+        _wifiGlyph.Visibility = showFan ? Visibility.Visible : Visibility.Collapsed;
+        _wifiIcon.Visibility = showFan ? Visibility.Collapsed : Visibility.Visible;
+        _wifiGlyph.Opacity = anyUp ? 1 : 0.35;
+        if (wifi && !_readingWifi)
+        {
+            _readingWifi = true;
+            Task.Run(() => Wlan.Current()?.Signal).ContinueWith(t => Dispatcher.BeginInvoke(() =>
+            {
+                _readingWifi = false;
+                _wifiLevel = t.IsCompletedSuccessfully && t.Result is int s ? WifiGlyph.LevelFor(s) : 3;
+                _wifiGlyph.Level = _wifiLevel;
+            }));
+        }
+        else if (!wifi) _wifiGlyph.Level = 3;
     }
+
+    WifiGlyph _wifiGlyph;
+    int _wifiLevel = 3;
+    bool _readingWifi;
+
+    /// <summary>The network items looked at again now (a network was joined or left, Wi-Fi switched).</summary>
+    public void RefreshNetwork() => UpdateStatus();
+
+    /// <summary>The Wi-Fi menu, under its menu bar item (Control Center's Wi-Fi tile).</summary>
+    public void ShowWifiMenu() => WifiPopover.Toggle(_wifiButton);
 
     // ------------------------------------------------------------------ menus
 
