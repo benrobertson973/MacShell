@@ -33,7 +33,8 @@ Inside MacShell's own apps (Finder, System Settings) the menus show ⌘, which m
 | Show Desktop | **Win + D** |
 | New Finder window | **Win + E** |
 | System Settings | **Win + ,** |
-| Screenshot (full / selection) | **Win + Shift + 3** / **Win + Shift + 4** (saved to the Desktop) |
+| Screenshot (full / selection) | **Win + Shift + 3** / **Win + Shift + 4** (saved to the Desktop unless Options says otherwise) |
+| Screenshot toolbar & screen recording | **Win + Shift + 5** (stop recording: the menu bar's stop button or **Ctrl + Win + Esc**) |
 | Force Quit Applications | **Ctrl + Alt + Esc** |
 | Return to Windows | **Ctrl + Alt + Shift + Q** |
 
@@ -53,7 +54,10 @@ Ctrl+Shift+N makes a new folder, Ctrl+Shift+G is Go to Folder, Ctrl+Shift+. show
   "(3) App" style window titles), launch bounce, name labels, right-click menus (window list, Keep in Dock,
   Show in Finder, Hide, Quit; hold Alt for Force Quit), drag to reorder, hold an icon above the Dock until
   "Remove" appears to remove it, drag apps / PWAs / shortcuts in from Launchpad, Finder or the desktop to pin them,
-  drop files on an app to open them, on Trash to delete, a Downloads stack, and auto-hide.
+  drop files on an app to open them, on Trash to delete, Downloads and Recents stacks (select several items and
+  drag them out together; right-click → *Ignore “.ext” Files*), and auto-hide.
+* **Wi-Fi menu**: the menu bar's Wi-Fi icon shows the signal and opens the Mac's Wi-Fi menu — turn Wi-Fi on and off,
+  join networks (with the Mac's password window), known networks, Other Networks, Wi-Fi Settings.
 * **Finder**: sidebar (Favorites, iCloud/OneDrive, Locations, Tags), Icon / List / Column / Gallery views,
   tabs, back/forward, path bar, status bar with free space, "This Mac" (Windows Search index) or folder search,
   Quick Look, Get Info, rename in place, marquee selection, drag and drop, copy/cut/paste (Explorer-compatible),
@@ -70,8 +74,22 @@ Ctrl+Shift+N makes a new folder, Ctrl+Shift+G is Go to Folder, Ctrl+Shift+. show
 * **Launchpad** (paged grid, search, Other folder) • **Spotlight** (apps, files, calculator, settings, web) •
   **Mission Control** (live window thumbnails) • **App Switcher** • **Control Center** (Wi-Fi, Bluetooth,
   Focus, Dark Mode, Windows taskbar toggle, brightness, volume, media keys) • **Notification Center** widgets •
-  **About This Mac** • **Force Quit** • **System Settings** (Appearance with light/dark/auto and accent colours,
-  Wallpaper, Desktop & Dock, Control Center, Spotlight, Sound, General, Keyboard, Finder, MacShell).
+  **About This Mac** • **Force Quit**.
+* **System Settings**, with every pane working (no placeholders): Wi-Fi, Bluetooth, Network, Notifications, Sound,
+  Focus (Do Not Disturb), General, Appearance, Accessibility, Control Center, Spotlight, Privacy & Security,
+  Desktop & Dock, Displays, Wallpaper, Screen Saver, Battery, Lock Screen, Users & Groups, Internet Accounts,
+  Keyboard, Mouse, Trackpad, Printers & Scanners, Finder and MacShell. Wi-Fi, Bluetooth, Sound, Battery, Login
+  Items and the rest show and change Windows' own settings where Windows has them; Displays shows each display's
+  resolution and refresh rate but leaves changing them (and colour) to Windows.
+* **Notes**: a Notes app like the Mac's — folders, pinned notes, titles and headings, lists and checklists,
+  pictures and links. *File → Import to Notes…* brings in your notes from Apple Notes on a Mac (and .enex, HTML,
+  Markdown, RTF and text files); *Export to Apple Notes…* writes a file that Notes on a Mac imports.
+* **QuickTime Player** opens your movies: the floating controls, full screen, Picture in Picture, Rotate and Flip,
+  Loop, Playback Speed and the Movie Inspector; movies filmed sideways on a phone are shown upright.
+* **Screen recording**: **Win + Shift + 5** (or QuickTime's *File → New Screen Recording*) opens the Mac's toolbar
+  to capture or record the entire screen, a window or a portion, with a timer, the floating thumbnail and
+  Show Mouse Clicks.
+* **Mail** for iCloud and Gmail, **Preview** for pictures, and the weather in the menu bar.
 * Fullscreen apps (games, videos) automatically hide the menu bar and Dock.
 
 ## Honest limitations
