@@ -85,7 +85,8 @@ Ctrl+Shift+N makes a new folder, Ctrl+Shift+G is Go to Folder, Ctrl+Shift+. show
   pictures and links. *File → Import to Notes…* brings in your notes from Apple Notes on a Mac (and .enex, HTML,
   Markdown, RTF and text files); *Export to Apple Notes…* writes a file that Notes on a Mac imports.
 * **QuickTime Player** opens your movies: the floating controls, full screen, Picture in Picture, Rotate and Flip,
-  Loop, Playback Speed and the Movie Inspector; movies filmed sideways on a phone are shown upright.
+  Loop, Playback Speed and the Movie Inspector; movies filmed sideways on a phone are shown upright. Press anywhere on
+  the timeline and drag, or scroll sideways over the movie, to move through it.
 * **Screen recording**: **Win + Shift + 5** (or QuickTime's *File → New Screen Recording*) opens the Mac's toolbar
   to capture or record the entire screen, a window or a portion, with a timer, the floating thumbnail and
   Show Mouse Clicks.
