@@ -20,8 +20,10 @@ namespace MacShell.Apps.QuickTime;
 /// <summary>
 /// QuickTime Player, like the Mac's: the movie fills a black window; moving the pointer over it brings up the title and
 /// the floating controls (volume, back, play/pause, forward, Picture in Picture, full screen, the timeline with the time
-/// gone and left), which fade away while it plays. The window keeps the movie's shape; Space plays and pauses, the arrows
-/// step, J/K/L shuttle; full screen hides the menu bar and the Dock. Movies open from Finder, the Dock and File › Open.
+/// gone and left), which fade away while it plays. The timeline is pressed anywhere and dragged (the movie holds still
+/// under the playhead until it's let go); scrolling sideways, or the wheel over the timeline, moves through the movie.
+/// The window keeps the movie's shape; Space plays and pauses, the arrows step, J/K/L shuttle; full screen hides the
+/// menu bar and the Dock. Movies open from Finder, the Dock and File › Open.
 /// </summary>
 public sealed class QuickTimeWindow : MacWindow
 {
@@ -30,6 +32,8 @@ public sealed class QuickTimeWindow : MacWindow
     public static QuickTimeWindow Front => All.FirstOrDefault(w => w.IsActive) ?? All.LastOrDefault();
     /// <summary>Tests: movies open silent (never a sound while testing).</summary>
     public static bool Silent { get; set; }
+    /// <summary>Tests: where the pointer is along a pressed HUD slider (0 to 1), in place of the real pointer.</summary>
+    public static double? TestPointerAt { get; set; }
 
     static readonly string[] VideoExts = { ".mp4", ".m4v", ".mov", ".mkv", ".avi", ".wmv", ".webm", ".mpg", ".mpeg", ".m2ts", ".mts", ".ts", ".3gp", ".3g2", ".flv", ".asf" };
     static readonly string[] AudioExts = { ".mp3", ".m4a", ".aac", ".wav", ".wma", ".flac", ".aiff", ".aif", ".ogg", ".opus" };
@@ -92,7 +96,7 @@ public sealed class QuickTimeWindow : MacWindow
     readonly TextBlock _message = new() { Foreground = new SolidColorBrush(Color.FromArgb(0xCC, 0xFF, 0xFF, 0xFF)), FontSize = 14, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, TextAlignment = TextAlignment.Center, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(30) };
     readonly DispatcherTimer _tick = new() { Interval = TimeSpan.FromMilliseconds(100) };
     readonly DispatcherTimer _idle = new() { Interval = TimeSpan.FromSeconds(2.2) };
-    bool _playing, _scrubbing, _loop, _fullScreen, _pip, _audioOnly, _float;
+    bool _playing, _scrubbing, _resumeAfterScrub, _loop, _fullScreen, _pip, _audioOnly, _float;
     readonly bool _silent;
     double _aspect = 16.0 / 9;
     Rect _normalBounds;
@@ -130,6 +134,7 @@ public sealed class QuickTimeWindow : MacWindow
         {
             _hwnd = new WindowInteropHelper(this).Handle;
             HwndSource.FromHwnd(_hwnd)?.AddHook(KeepShape);
+            HwndSource.FromHwnd(_hwnd)?.AddHook(SideScroll);
         };
         Loaded += (_, _) => CenterOnWorkArea(0.4);
         PreviewKeyDown += OnKey;
@@ -190,6 +195,7 @@ public sealed class QuickTimeWindow : MacWindow
         var volButton = HudButton(_volIcon, "Mute", ToggleMute);
         vol.Children.Add(volButton);
         _volume.Style = HudSliderStyle();
+        PressAndDrag(_volume, null, v => _volume.Value = v, null);
         _volume.Value = Settings.Current.QuickTimeVolume;
         _volume.ValueChanged += (_, e) =>
         {
@@ -216,17 +222,15 @@ public sealed class QuickTimeWindow : MacWindow
         Grid.SetColumn(right, 2);
         top.Children.Add(right);
         rows.Children.Add(top);
-        // the timeline
-        var line = new DockPanel { Margin = new Thickness(0, 4, 0, 0) };
+        // the timeline: pressed anywhere and dragged; the wheel over it moves through the movie
+        var line = new DockPanel { Margin = new Thickness(0, 4, 0, 0), Background = Brushes.Transparent };
         DockPanel.SetDock(_elapsed, Dock.Left);
         DockPanel.SetDock(_remaining, Dock.Right);
         line.Children.Add(_elapsed);
         line.Children.Add(_remaining);
         _scrub.Style = HudSliderStyle();
-        _scrub.IsMoveToPointEnabled = true;
-        _scrub.PreviewMouseLeftButtonDown += (_, _) => _scrubbing = true;
-        _scrub.PreviewMouseLeftButtonUp += (_, _) => { _scrubbing = false; Seek(_scrub.Value); };
-        _scrub.ValueChanged += (_, e) => { if (_scrubbing) Seek(e.NewValue); };
+        PressAndDrag(_scrub, BeginScrub, ScrubTo, EndScrub);
+        line.MouseWheel += (_, e) => { ScrollBy(e.Delta); e.Handled = true; };
         line.Children.Add(_scrub);
         rows.Children.Add(line);
         _hud.Child = rows;
@@ -283,6 +287,38 @@ public sealed class QuickTimeWindow : MacWindow
         WindowChrome.SetIsHitTestVisibleInChrome(b, true);
         b.Click += (_, _) => click();
         return b;
+    }
+
+    /// <summary>A HUD slider the Mac's way: pressed anywhere, its knob jumps under the pointer and follows it until it's let
+    /// go. (WPF's own Slider takes the press for itself, so the timeline never knew it was being dragged.)</summary>
+    static void PressAndDrag(Slider s, Action begin, Action<double> to, Action end)
+    {
+        bool down = false;
+        double At(MouseEventArgs e)
+        {
+            double v = TestPointerAt is double f ? s.Minimum + f * (s.Maximum - s.Minimum)
+                : s.Template?.FindName("PART_Track", s) is Track t ? t.ValueFromPoint(e.GetPosition(t)) : s.Value;
+            return double.IsFinite(v) ? Math.Clamp(v, s.Minimum, s.Maximum) : s.Value;
+        }
+        s.AddHandler(UIElement.PreviewMouseLeftButtonDownEvent, new MouseButtonEventHandler((_, e) =>
+        {
+            e.Handled = true;   // (the knob's own drag, the track's jumps and the HUD's dragging stay out of it)
+            down = true;
+            s.CaptureMouse();
+            begin?.Invoke();
+            to(At(e));
+        }), true);
+        s.PreviewMouseMove += (_, e) => { if (down) to(At(e)); };
+        s.PreviewMouseLeftButtonUp += (_, e) =>
+        {
+            if (!down) return;
+            e.Handled = true;
+            down = false;
+            to(At(e));
+            s.ReleaseMouseCapture();
+            end?.Invoke();
+        };
+        s.LostMouseCapture += (_, _) => { if (down) { down = false; end?.Invoke(); } };
     }
 
     static Style _hudSlider;
@@ -359,8 +395,55 @@ public sealed class QuickTimeWindow : MacWindow
 
     void Seek(double seconds)
     {
-        _media.Position = TimeSpan.FromSeconds(Math.Max(0, seconds));
-        UpdateTime(fromScrub: true);
+        // (a hair before the end: at the very end there's no frame, and the picture would stay on the one it had)
+        double end = Duration > TimeSpan.Zero ? Math.Max(0, Duration.TotalSeconds - 0.05) : double.MaxValue;
+        _media.Position = TimeSpan.FromSeconds(Math.Clamp(seconds, 0, end));
+        UpdateTime();
+    }
+
+    /// <summary>The timeline pressed: while it's held the movie stands still on the frame under the playhead, as on a Mac.</summary>
+    void BeginScrub()
+    {
+        _scrubbing = true;
+        _resumeAfterScrub = _playing;
+        if (_playing) _media.Pause();
+        ShowControls();
+    }
+
+    void ScrubTo(double seconds)
+    {
+        _scrub.Value = seconds;
+        Seek(seconds);
+    }
+
+    /// <summary>The timeline let go: a movie that was playing plays on from there.</summary>
+    void EndScrub()
+    {
+        _scrubbing = false;
+        Seek(_scrub.Value);
+        if (_resumeAfterScrub && _playing) { _media.SpeedRatio = _speed; _media.Play(); }
+        _resumeAfterScrub = false;
+        ShowControls();
+    }
+
+    /// <summary>Scrolling through the movie (a trackpad's sideways swipe anywhere on it, or the wheel over the timeline;
+    /// right or up is later): a notch is a hundredth of the movie, at least half a second and at most ten.</summary>
+    void ScrollBy(int delta)
+    {
+        if (delta == 0 || Duration <= TimeSpan.Zero) return;
+        double notch = Math.Clamp(Duration.TotalSeconds / 100, 0.5, 10);
+        Seek(_media.Position.TotalSeconds + delta / 120.0 * notch);
+        ShowControls();
+    }
+
+    /// <summary>Sideways scrolling over the window (WM_MOUSEHWHEEL: a trackpad's two-finger swipe, a tilting wheel).</summary>
+    IntPtr SideScroll(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
+    {
+        const int WM_MOUSEHWHEEL = 0x020E;
+        if (msg != WM_MOUSEHWHEEL) return IntPtr.Zero;
+        ScrollBy((short)((wParam.ToInt64() >> 16) & 0xFFFF));
+        handled = true;
+        return IntPtr.Zero;
     }
 
     void Skip(double seconds)
@@ -393,13 +476,14 @@ public sealed class QuickTimeWindow : MacWindow
         _media.SpeedRatio = speed;
     }
 
-    void UpdateTime(bool fromScrub = false)
+    /// <summary>The time gone and left, and the playhead (which stays under the pointer while the timeline is held).</summary>
+    void UpdateTime()
     {
-        var pos = _media.Position;
+        var pos = _scrubbing ? TimeSpan.FromSeconds(_scrub.Value) : _media.Position;
         var dur = Duration;
         _elapsed.Text = Format(pos);
         _remaining.Text = dur > TimeSpan.Zero ? "-" + Format(dur - pos) : "";
-        if (!_scrubbing && !fromScrub) _scrub.Value = Math.Min(_scrub.Maximum, pos.TotalSeconds);
+        if (!_scrubbing) _scrub.Value = Math.Min(_scrub.Maximum, pos.TotalSeconds);
     }
 
     static string Format(TimeSpan t)
@@ -736,6 +820,8 @@ public sealed class QuickTimeWindow : MacWindow
             case "play": w?.Play(); break;
             case "controls": w?.ShowControls(); break;
             case "seek": w?.Seek(2); break;
+            case "forward": w?.Skip(10); break;
+            case "back": w?.Skip(-10); break;
             case "full": w?.ToggleFullScreen(); break;
             case "pip": w?.TogglePip(); break;
             case "rotate": w?.Turn(1); break;

@@ -1,6 +1,9 @@
 using System.Diagnostics;
 using System.Text;
 using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
+using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
@@ -15,6 +18,7 @@ namespace MacShell.Apps.QuickTime;
 /// one that says it was filmed sideways), played in QuickTime Player windows and checked by their pixels; the screenshot
 /// toolbar and a selection are drawn off-screen as PNGs; a short recording of a small corner of the screen is made both
 /// ways (Desktop Duplication and GDI) and only measured - its file is deleted. Results in qt-probe.txt.
+/// QT_PROBE_ONLY=timeline runs just the timeline test (pressing, dragging, clicking and scrolling it).
 /// </summary>
 public static class QuickTimeProbe
 {
@@ -30,6 +34,13 @@ public static class QuickTimeProbe
         ShellHost.Offscreen = true;
         Finder.Sound.Muted = true;
         QuickTimeWindow.Silent = true;
+
+        if (Environment.GetEnvironmentVariable("QT_PROBE_ONLY") == "timeline")
+        {
+            Timeline(dir, log);
+            File.WriteAllText(Path.Combine(dir, "qt-probe.txt"), log.ToString());
+            return;
+        }
 
         // ---- test movies
         string plain = Path.Combine(dir, "probe-plain.mp4"), turned = Path.Combine(dir, "probe-turned.mp4");
@@ -95,6 +106,7 @@ public static class QuickTimeProbe
             w.Close();
             Pump(200);
         }
+        Timeline(dir, log);
 
         // ---- the toolbar and a selection, off-screen
         try
@@ -170,6 +182,138 @@ public static class QuickTimeProbe
         }
 
         File.WriteAllText(Path.Combine(dir, "qt-probe.txt"), log.ToString());
+    }
+
+    /// <summary>The timeline, used the way a hand uses it: pressed and held, dragged, clicked, while playing and paused,
+    /// and scrolled. Where the pointer is along a slider comes from QuickTimeWindow.TestPointerAt when this build has it;
+    /// otherwise from the real pointer, which is far to the right of this off-screen window (= the end).</summary>
+    static void Timeline(string dir, StringBuilder log)
+    {
+        string file = Path.Combine(dir, "probe-30s.mp4");
+        try { MakeMovie(file, 0, frames: 900); }
+        catch (Exception ex) { log.AppendLine("timeline: movie FAILED " + ex.Message); return; }
+        var w = QuickTimeWindow.Open(file, silent: true);
+        Hide(w);
+        WaitFor(() => !QuickTimeWindow.TestState().Contains("dur=-1"), 6000);
+        Pump(700);
+        var sliders = FindAll<Slider>((DependencyObject)w.Content).OrderByDescending(s => s.ActualWidth).ToList();
+        if (sliders.Count < 2 || sliders[0].Template.FindName("PART_Track", sliders[0]) is not Track track)
+        {
+            log.AppendLine("timeline: FAILED, no timeline slider");
+            w.Close();
+            return;
+        }
+        Slider line = sliders[0], volume = sliders[1];
+        var at = typeof(QuickTimeWindow).GetProperty("TestPointerAt");
+        void Pointer(double? f) => at?.SetValue(null, f);
+        string State() => string.Join(" ", QuickTimeWindow.TestState().Split(' ').Where(p => p.StartsWith("pos=") || p.StartsWith("playing="))) + $" timeline={line.Value:0.0}";
+        // the frame on screen, told by where its green bar is (5 px a frame) against where the bar is at a time
+        string Frame(double t)
+        {
+            double got = BarAt(Render((FrameworkElement)w.Content, Path.Combine(dir, $"timeline-{t:0.0}s.png")), 0.33);
+            double want = Math.Round(t * 30) * 5 % 320 / 320;
+            return $"bar at {got:0.000}, {(Math.Abs(got - want) < 0.04 ? "the frame for" : "NOT the frame for")} {t:0.0} s ({want:0.000})";
+        }
+        log.AppendLine($"timeline: {QuickTimeWindow.TestState()}");
+
+        QuickTimeWindow.Test("seek");
+        log.AppendLine($"  Seek(2), read at once: {State()}");
+        Pump(300);
+
+        // pressed on the timeline and held for a third of a second (as a hand does), then let go; the real pointer: the end
+        Pointer(null);
+        Press(track.IncreaseRepeatButton); Pump(330);
+        Release(track.IncreaseRepeatButton); Pump(500);
+        log.AppendLine($"  pressed, held, let go (real pointer: the end): {State()}   [expect pos=30.0, at the end]; {Frame(29.95)}");
+        if (at == null)
+        {
+            log.AppendLine("  (this build has no TestPointerAt: the rest is skipped)");
+            w.Close();
+            Pump(200);
+            return;
+        }
+
+        QuickTimeWindow.Test("play");
+        Pump(400);
+        // held at the very end: the last frame, not the first
+        Pointer(1.0); Press(track.IncreaseRepeatButton); Pump(330);
+        log.AppendLine($"  held at the very end: {State()}; {Frame(29.95)}");
+        Release(line); Pump(400);
+        log.AppendLine($"  let go there: {State()}   [expect playing=False, ended]");
+        QuickTimeWindow.Test("play");
+        Pump(400);
+        // pressed half way along and held: the movie waits there; dragged on to 70%; let go: it plays on from there
+        Pointer(0.5); Press(track.IncreaseRepeatButton); Pump(330);
+        log.AppendLine($"  held at 50%: {State()}   [expect pos=15.0]; {Frame(15)}");
+        Pointer(0.7); Move(line); Pump(330);
+        log.AppendLine($"  dragged to 70%: {State()}   [expect pos=21.0]; {Frame(21)}");
+        Release(line); Pump(500);
+        log.AppendLine($"  let go, half a second later: {State()}   [expect pos about 21.5, playing]");
+        // a quick click behind the playhead
+        Pointer(0.2); Press(track.DecreaseRepeatButton); Release(track.DecreaseRepeatButton); Pump(300);
+        log.AppendLine($"  clicked at 20%: {State()}   [expect pos about 6.3]");
+        // paused: a click shows that moment, and Fast Forward moves the playhead with it
+        QuickTimeWindow.Test("pause");
+        Pointer(0.4); Press(track.IncreaseRepeatButton); Release(track.IncreaseRepeatButton); Pump(300);
+        log.AppendLine($"  paused, clicked at 40%: {State()}   [expect pos=12.0 timeline=12.0]; {Frame(12)}");
+        QuickTimeWindow.Test("forward");
+        Pump(300);
+        log.AppendLine($"  paused, Fast Forward: {State()}   [expect pos=22.0 timeline=22.0]; {Frame(22)}");
+        // scrolled sideways (a trackpad's two-finger swipe), then the wheel over the timeline
+        var hwnd = new WindowInteropHelper(w).Handle;
+        for (int i = 0; i < 4; i++) { NativeMethods.SendMessage(hwnd, 0x020E, (IntPtr)(120 << 16), IntPtr.Zero); Pump(60); }
+        Pump(300);
+        log.AppendLine($"  scrolled right 4 notches: {State()}   [expect pos=24.0]; {Frame(24)}");
+        for (int i = 0; i < 2; i++) { Wheel(line, -120); Pump(60); }
+        Pump(300);
+        log.AppendLine($"  wheel down 2 notches over the timeline: {State()}   [expect pos=23.0]; {Frame(23)}");
+        // the volume: a click on its bar puts it there (not all the way up or down)
+        Pointer(0.3); Press(volume); Release(volume); Pump(200);
+        log.AppendLine($"  volume clicked at 30%: {volume.Value:0.00}   [expect 0.30]");
+        Pointer(null);
+        w.Close();
+        Pump(200);
+    }
+
+    /// <summary>Where a probe movie's green bar is across a picture (0 to 1) on the row at <paramref name="row"/> of its
+    /// height; -1 if it isn't there.</summary>
+    static double BarAt(BitmapSource bmp, double row)
+    {
+        int w = bmp.PixelWidth, y = Math.Clamp((int)(row * bmp.PixelHeight), 0, bmp.PixelHeight - 1);
+        var px = new byte[w * 4];
+        bmp.CopyPixels(new Int32Rect(0, y, w, 1), px, w * 4, 0);
+        int first = -1, last = -1;
+        for (int x = 0; x < w; x++)
+        {
+            byte b = px[x * 4], g = px[x * 4 + 1], r = px[x * 4 + 2];
+            if (g > 120 && r < 90 && b < 90) { if (first < 0) first = x; last = x; }
+        }
+        return first < 0 ? -1 : (first + last) / 2.0 / w;
+    }
+
+    static IEnumerable<T> FindAll<T>(DependencyObject root) where T : DependencyObject
+    {
+        for (int i = 0; i < VisualTreeHelper.GetChildrenCount(root); i++)
+        {
+            var c = VisualTreeHelper.GetChild(root, i);
+            if (c is T t) yield return t;
+            foreach (var d in FindAll<T>(c)) yield return d;
+        }
+    }
+
+    // A press, a let-go, a move or a wheel turn raised the way WPF raises a real one: the preview event, then the
+    // bubbling one carrying its handledness. The real pointer never moves.
+    static void Press(UIElement on) => Raise(on, new MouseButtonEventArgs(Mouse.PrimaryDevice, Environment.TickCount, MouseButton.Left), Mouse.PreviewMouseDownEvent, Mouse.MouseDownEvent);
+    static void Release(UIElement on) => Raise(on, new MouseButtonEventArgs(Mouse.PrimaryDevice, Environment.TickCount, MouseButton.Left), Mouse.PreviewMouseUpEvent, Mouse.MouseUpEvent);
+    static void Move(UIElement on) => Raise(on, new MouseEventArgs(Mouse.PrimaryDevice, Environment.TickCount), Mouse.PreviewMouseMoveEvent, Mouse.MouseMoveEvent);
+    static void Wheel(UIElement on, int delta) => Raise(on, new MouseWheelEventArgs(Mouse.PrimaryDevice, Environment.TickCount, delta), Mouse.PreviewMouseWheelEvent, Mouse.MouseWheelEvent);
+
+    static void Raise(UIElement on, MouseEventArgs e, RoutedEvent preview, RoutedEvent bubble)
+    {
+        e.RoutedEvent = preview;
+        on.RaiseEvent(e);
+        e.RoutedEvent = bubble;
+        on.RaiseEvent(e);
     }
 
     static void Hide(Window w)

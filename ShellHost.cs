@@ -374,7 +374,7 @@ public static class ShellHost
             case "notestest": Apps.Notes.NotesWindow.Test(arg); break;   // diagnostics: notestest:sample | format | roundtrip | cleanup
             case "notesstate": File.WriteAllText(Path.Combine(Settings.DataDirectory, "notesstate.txt"), Apps.Notes.NotesWindow.TestState()); break;
             case "quicktime": if (string.IsNullOrEmpty(arg)) Apps.QuickTime.QuickTimeWindow.OpenApp(); else Apps.QuickTime.QuickTimeWindow.Open(arg, silent: true); break;   // (tests: muted, never a sound)
-            case "qttest": Apps.QuickTime.QuickTimeWindow.Test(arg); break;   // diagnostics: qttest:play | pause | seek | controls | full | pip | rotate | flip | bigger | smaller | float | close
+            case "qttest": Apps.QuickTime.QuickTimeWindow.Test(arg); break;   // diagnostics: qttest:play | pause | seek | forward | back | controls | full | pip | rotate | flip | bigger | smaller | float | close
             case "qtstate": File.WriteAllText(Path.Combine(Settings.DataDirectory, "qtstate.txt"), Apps.QuickTime.QuickTimeWindow.TestState()); break;
             case "screenrecord": Apps.QuickTime.ScreenRecorder.Test(arg); break;   // diagnostics: screenrecord:start | stop | state
             case "winfo":   // diagnostics: winfo:<title> - a window's sizes → winfo.txt
