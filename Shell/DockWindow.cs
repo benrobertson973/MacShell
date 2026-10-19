@@ -58,6 +58,8 @@ public class DockWindow : Window
     double SepWidth => Math.Round(Base * 0.3);
 
     public double ReservedHeight => Settings.Current.DockAutoHide ? 2 : PanelHeight + BottomMargin + 6;
+    /// <summary>The Dock window's height (room for the magnified icons and their names above the shelf).</summary>
+    public double WindowHeight => Mag + PadTop + PadBottom + BottomMargin + LabelSpace;
 
     public DockWindow()
     {
@@ -111,11 +113,9 @@ public class DockWindow : Window
 
     public void Reposition()
     {
-        double h = Mag + PadTop + PadBottom + BottomMargin + LabelSpace;
-        Left = ShellHost.ScreenPx.Left / ShellHost.Scale;
-        Width = ShellHost.ScreenDip.Width;
-        Height = h;
-        Top = ShellHost.ScreenPx.Top / ShellHost.Scale + ShellHost.ScreenDip.Height - h;
+        // along the bottom of the main display, in its pixels (see PlaceOnPixels: not in WPF units worked out with its scale)
+        var s = ShellHost.ScreenPx;
+        ShellHost.PlaceOnPixels(this, new RECT(s.Left, s.Bottom - (int)Math.Round(WindowHeight * ShellHost.Scale), s.Right, s.Bottom));
         _surface?.Kick();
     }
 

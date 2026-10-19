@@ -133,8 +133,46 @@ public static class ShellHost
     /// <summary>The screen edges cut off (pixels), as they apply to this display (no more than leaves half of it).</summary>
     public static (int Left, int Top, int Right, int Bottom) TrimPx { get; private set; }
 
+    /// <summary>Probes: a made-up main display (somewhere off-screen, pixels and scale) in place of the real one.</summary>
+    public static (RECT Px, double Scale)? TestScreen { get; set; }
+
+    /// <summary>The main display measured again (probes: after <see cref="TestScreen"/> changed).</summary>
+    public static void Remeasure() => ComputeMetrics();
+
+    /// <summary>The scale WPF draws a window with right now - its display's, as far as WPF has heard (the main display's
+    /// before it has a handle).</summary>
+    public static double WindowScale(System.Windows.Media.Visual v) =>
+        PresentationSource.FromVisual(v)?.CompositionTarget?.TransformToDevice.M11 is double m && m > 0 ? m : Scale;
+
+    /// <summary>
+    /// Puts a window exactly on a rectangle of screen pixels. WPF turns Left/Top/Width/Height into pixels with the
+    /// window's own scale, which after a new resolution or another display can still be the old display's, while
+    /// <see cref="Scale"/> is already the new one's; and once its numbers are set it skips setting the same ones again,
+    /// even when the window is no longer there. (That put the Dock in the middle of the screen, or off it, for good.)
+    /// So WPF's numbers are worked out with the window's own scale, and the pixels are made sure of at the end.
+    /// </summary>
+    public static void PlaceOnPixels(Window w, RECT r)
+    {
+        double s = WindowScale(w);
+        w.Left = r.Left / s;
+        w.Top = r.Top / s;
+        w.Width = (r.Right - r.Left) / s;
+        w.Height = (r.Bottom - r.Top) / s;
+        var h = new WindowInteropHelper(w).Handle;
+        if (h != IntPtr.Zero && GetWindowRect(h, out RECT now) && (now.Left != r.Left || now.Top != r.Top || now.Right != r.Right || now.Bottom != r.Bottom))
+            SetWindowPos(h, IntPtr.Zero, r.Left, r.Top, r.Right - r.Left, r.Bottom - r.Top, SWP_NOZORDER | SWP_NOACTIVATE);
+    }
+
     static void ComputeMetrics()
     {
+        if (TestScreen is { } fake)
+        {
+            MonitorPx = ScreenPx = fake.Px;
+            TrimPx = (0, 0, 0, 0);
+            Scale = fake.Scale;
+            ScreenDip = new Size(ScreenPx.Width / Scale, ScreenPx.Height / Scale);
+            return;
+        }
         var mons = GetMonitors();
         var primary = mons.FirstOrDefault(m => m.primary);
         if (primary.handle == IntPtr.Zero && mons.Count > 0) primary = mons[0];

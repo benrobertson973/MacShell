@@ -43,6 +43,18 @@ public partial class App : Application
             return;
         }
 
+        // the bars probe: the menu bar and the Dock on made-up displays (off-screen) whose scale isn't the windows' own
+        int barsProbe = Array.IndexOf(args, "--bars-probe");
+        if (barsProbe >= 0 && barsProbe + 1 < e.Args.Length)
+        {
+            LogPath = Path.Combine(e.Args[barsProbe + 1], "probe.log");
+            DispatcherUnhandledException += (_, ev) => { Log("bars probe: " + ev.Exception); ev.Handled = true; };
+            try { MacShell.Shell.BarsProbe.Run(e.Args[barsProbe + 1]); }
+            catch (Exception ex) { Log("bars probe: " + ex); }
+            Shutdown();
+            return;
+        }
+
         // the QuickTime probe: test movies and the screen recorder, silent and offscreen
         int qtProbe = Array.IndexOf(args, "--qt-probe");
         if (qtProbe >= 0 && qtProbe + 1 < e.Args.Length)

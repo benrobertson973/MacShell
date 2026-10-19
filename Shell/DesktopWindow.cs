@@ -109,6 +109,12 @@ public class DesktopWindow : Window
             HwndSource.FromHwnd(Handle).AddHook(WndProc);
             SetWindowPos(Handle, HWND_BOTTOM, bounds.Left, bounds.Top, bounds.Width, bounds.Height, SWP_NOACTIVATE);
         };
+        // its display's scale changed (or it was made on another display's): WPF moves it to Windows' suggestion, a
+        // grown or shrunk copy of itself - it's put back over its display
+        DpiChanged += (_, _) => Dispatcher.BeginInvoke(() =>
+        {
+            if (Handle != IntPtr.Zero) SetWindowPos(Handle, HWND_BOTTOM, bounds.Left, bounds.Top, bounds.Width, bounds.Height, SWP_NOACTIVATE);
+        });
         Loaded += (_, _) =>
         {
             if (!IsPrimary) return;

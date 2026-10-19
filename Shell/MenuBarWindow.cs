@@ -118,10 +118,9 @@ public class MenuBarWindow : Window
 
     public void Reposition()
     {
-        Left = ShellHost.ScreenPx.Left / ShellHost.Scale;
-        Top = ShellHost.ScreenPx.Top / ShellHost.Scale;
-        Width = ShellHost.ScreenDip.Width;
-        Height = ShellHost.MenuBarHeight;
+        // along the top of the main display, in its pixels (see PlaceOnPixels)
+        var s = ShellHost.ScreenPx;
+        ShellHost.PlaceOnPixels(this, new RECT(s.Left, s.Top, s.Right, s.Top + (int)Math.Round(ShellHost.MenuBarHeight * ShellHost.Scale)));
         ApplyAppearance();
     }
 
